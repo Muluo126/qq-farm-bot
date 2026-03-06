@@ -72,6 +72,10 @@ export function getAccountStatistics(uin, hours = 24) {
   return api.get(`/accounts/${uin}/statistics`, { params: { hours } })
 }
 
+export function getAccountDailyStatistics(uin, days = 7) {
+  return api.get(`/accounts/${uin}/daily-statistics`, { params: { days } })
+}
+
 // QR 登录
 export function startQrLogin(uin, opts = {}) {
   return api.post(`/accounts/${uin}/qr-login`, opts)
@@ -143,6 +147,16 @@ export function getAnnouncement() {
 
 export function updateAnnouncement(data) {
   return api.put('/announcement', data)
+}
+
+// ============ 邮件通知设置 API ============
+
+export function getMailSettings() {
+  return api.get('/admin/settings/mail')
+}
+
+export function saveMailSettings(data) {
+  return api.put('/admin/settings/mail', data)
 }
 
 export default api

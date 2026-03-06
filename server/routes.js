@@ -107,20 +107,33 @@ router.use(authMiddleware);
 //  账号列表
 // ============================================================
 
-/** POST /api/accounts/add-by-code - 微信 authCode 添加账号 */
+/** POST /api/accounts/add-by-code - authCode 添加账号 (支持 QQ/微信) */
 router.post('/accounts/add-by-code', async (req, res) => {
     try {
-        const { code, farmInterval, friendInterval } = req.body || {};
+        const { code, uin: manualUin, platform, farmInterval, friendInterval } = req.body || {};
         if (!code) {
             return res.status(400).json({ ok: false, error: 'authCode 不能为空' });
         }
 
-        // 微信用户自动生成随机唯一标识
-        const uin = 'wx_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        const actualPlatform = 'wx';
+        const actualPlatform = platform || 'wx';
+        let uin = manualUin;
 
-        // 创建用户记录
-        db.createUser({ uin, platform: actualPlatform, farmInterval: farmInterval || 10000, friendInterval: friendInterval || 10000 });
+        if (actualPlatform === 'wx' && !uin) {
+            // 微信用户如果没有提供 uin，则自动生成随机唯一标识
+            uin = 'wx_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        }
+
+        if (!uin) {
+            return res.status(400).json({ ok: false, error: '账号标识 (UIN) 不能为空' });
+        }
+
+        // 创建或更新用户记录
+        let user = db.getUserByUin(uin);
+        if (!user) {
+            db.createUser({ uin, platform: actualPlatform, farmInterval: farmInterval || 10000, friendInterval: friendInterval || 10000 });
+        } else {
+            db.updateUser(uin, { platform: actualPlatform });
+        }
 
         // 保存 session
         db.saveSession(uin, code);
@@ -448,6 +461,30 @@ router.get('/accounts/:uin/daily-statistics', canAccessUin, (req, res) => {
         const days = parseInt(req.query.days) || 7;
         const stats = db.getDailyStatistics(req.params.uin, days);
         res.json({ ok: true, data: stats });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// ============================================================
+//  管理员: 邮件通知设置
+// ============================================================
+
+/** GET /api/admin/settings/mail */
+router.get('/admin/settings/mail', adminOnly, (req, res) => {
+    try {
+        res.json({ ok: true, data: db.getMailSettings() });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+/** PUT /api/admin/settings/mail */
+router.put('/admin/settings/mail', adminOnly, (req, res) => {
+    try {
+        const { mailTo, mailEnabled } = req.body || {};
+        db.saveMailSettings(mailTo, mailEnabled);
+        res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
     }

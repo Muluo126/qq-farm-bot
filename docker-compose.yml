@@ -13,5 +13,10 @@ services:
     environment:
       - PORT=3000 
       - TZ=Asia/Shanghai
-      # 生产环境请修改为你自己的加密密钥（32字符） 
-      - BOT_ENCRYPT_KEY=qq-farm-bot-default-key-32bytes! 
+      # 生产环境请修改为你自己的加密密钥（32字符）
+      - BOT_ENCRYPT_KEY=qq-farm-bot-default-key-32bytes!
+      # 邮件掉线通知 SMTP 配置（如需启用，取消以下注释并填写真实信息）
+      # - MAIL_HOST=smtp.qq.com
+      # - MAIL_PORT=587
+      # - MAIL_USER=your-email@qq.com
+      # - MAIL_PASS=your-smtp-auth-code

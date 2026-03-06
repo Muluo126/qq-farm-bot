@@ -46,6 +46,33 @@
       </el-table>
     </div>
 
+  <!-- 邮件通知设置 -->
+  <div class="section-card" style="margin-top: 20px;">
+    <div class="section-header">
+      <h3 class="section-title">📧 掘线邮件通知</h3>
+    </div>
+    <el-form :model="mailForm" label-width="120px" style="max-width: 500px;" v-loading="mailLoading">
+      <el-form-item label="启用掉线通知">
+        <el-switch v-model="mailForm.mailEnabled" />
+        <span class="field-hint" style="margin-left: 10px;">账号异常断线时发送邮件提醉</span>
+      </el-form-item>
+      <el-form-item label="接收邮箱">
+        <el-input
+          v-model="mailForm.mailTo"
+          placeholder="请输入接收监控邮件的地址"
+          :disabled="!mailForm.mailEnabled"
+          style="max-width: 320px;"
+        />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="saveMailConfig" :loading="mailSaving">保存设置</el-button>
+      </el-form-item>
+    </el-form>
+    <el-alert type="info" :closable="false" style="margin-top: 8px;">
+      <span>SMTP 发件配置（服务器，所用邮箱，授权码）通过环境变量 <code>MAIL_HOST</code> / <code>MAIL_USER</code> / <code>MAIL_PASS</code> 酭置。</span>
+    </el-alert>
+  </div>
+
     <!-- 添加/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
@@ -93,7 +120,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser, getAccounts } from '../api/index.js'
+import { getAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser, getAccounts, getMailSettings, saveMailSettings } from '../api/index.js'
 
 const users = ref([])
 const loading = ref(false)
@@ -203,9 +230,40 @@ async function handleDelete(row) {
   } catch { /* cancel */ }
 }
 
+// 邮件设置
+const mailForm = ref({ mailTo: '', mailEnabled: false })
+const mailLoading = ref(false)
+const mailSaving = ref(false)
+
+async function fetchMailSettings() {
+  mailLoading.value = true
+  try {
+    const res = await getMailSettings()
+    if (res.ok && res.data) {
+      mailForm.value.mailTo = res.data.mailTo || ''
+      mailForm.value.mailEnabled = !!res.data.mailEnabled
+    }
+  } catch { /* ignore */ } finally {
+    mailLoading.value = false
+  }
+}
+
+async function saveMailConfig() {
+  mailSaving.value = true
+  try {
+    await saveMailSettings({ mailTo: mailForm.value.mailTo, mailEnabled: mailForm.value.mailEnabled })
+    ElMessage.success('设置已保存')
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    mailSaving.value = false
+  }
+}
+
 onMounted(() => {
   fetchUsers()
   fetchAccounts()
+  fetchMailSettings()
 })
 </script>
 

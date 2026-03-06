@@ -73,12 +73,21 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="微信Code登录" name="manual">
+        <el-tab-pane label="Code 登录" name="manual">
           <el-form :model="manualForm" label-width="100px" @submit.prevent="handleManualSubmit">
+            <el-form-item label="登录平台" required>
+              <el-radio-group v-model="manualForm.platform">
+                <el-radio label="qq">QQ</el-radio>
+                <el-radio label="wx">微信</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="manualForm.platform === 'qq'" label="QQ号" required>
+              <el-input v-model="manualForm.uin" placeholder="请输入QQ号" />
+            </el-form-item>
             <el-form-item label="authCode" required>
               <el-input
                 v-model="manualForm.authCode"
-                placeholder="请粘贴 authCode"
+                placeholder="请粘贴 authCode (从 WSS URL 中获取)"
                 type="textarea"
                 :rows="2"
               />
@@ -160,8 +169,9 @@ const form = ref({
 })
 
 const manualForm = ref({
+  uin: '',
   authCode: '',
-  platform: 'wx',
+  platform: 'qq',
   farmIntervalSec: 10,
   friendIntervalSec: 10,
 })
@@ -170,6 +180,7 @@ const manualForm = ref({
 watch(() => props.visible, (visible) => {
   if (visible && props.initialUin) {
     form.value.uin = props.initialUin
+    manualForm.value.uin = props.initialUin
   }
 })
 
@@ -218,7 +229,9 @@ function handleSubmit() {
 
 function handleManualSubmit() {
   if (!manualForm.value.authCode.trim()) return
+  if (manualForm.value.platform === 'qq' && !manualForm.value.uin.trim()) return
   emit('confirm', {
+    uin: manualForm.value.uin.trim(),
     platform: manualForm.value.platform,
     farmInterval: manualForm.value.farmIntervalSec * 1000,
     friendInterval: manualForm.value.friendIntervalSec * 1000,

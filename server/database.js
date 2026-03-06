@@ -177,6 +177,14 @@ async function initDatabase() {
         )
     `);
 
+    // 创建系统设置表
+    db.run(`
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT DEFAULT ''
+        )
+    `);
+
     // 迁移: 添加 preferred_seed_id 列
     try { db.run(`ALTER TABLE users ADD COLUMN preferred_seed_id INTEGER DEFAULT 0`); } catch (e) { /* 列已存在 */ }
 
@@ -470,6 +478,31 @@ function saveAnnouncement({ title, content }) {
     return getAnnouncement();
 }
 
+// ============ 邮件设置 ============
+
+function getMailSettings() {
+    const toRow = queryOne(`SELECT value FROM system_settings WHERE key='mail_to'`);
+    const enabledRow = queryOne(`SELECT value FROM system_settings WHERE key='mail_enabled'`);
+    return {
+        mailTo: toRow ? toRow.value : '',
+        mailEnabled: enabledRow ? enabledRow.value === '1' : false,
+    };
+}
+
+function saveMailSettings(mailTo, mailEnabled) {
+    const upsert = (key, val) => {
+        const exists = queryOne(`SELECT key FROM system_settings WHERE key=?`, [key]);
+        if (exists) {
+            run(`UPDATE system_settings SET value=? WHERE key=?`, [val, key]);
+        } else {
+            run(`INSERT INTO system_settings (key, value) VALUES (?,?)`, [key, val]);
+        }
+    };
+    upsert('mail_to', mailTo || '');
+    upsert('mail_enabled', mailEnabled ? '1' : '0');
+    saveToFile();
+}
+
 /** 确保存在默认管理员 (首次运行时) */
 function ensureDefaultAdmin() {
     const admin = getAdminUser('admin');
@@ -524,4 +557,7 @@ module.exports = {
     addStatistic,
     getHourlyStatistics,
     getDailyStatistics,
+    // 邮件设置
+    getMailSettings,
+    saveMailSettings,
 };

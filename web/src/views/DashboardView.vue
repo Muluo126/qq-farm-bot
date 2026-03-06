@@ -178,11 +178,13 @@ async function handleDelete(uin) {
 }
 
 async function handleQrConfirm(form) {
-  // 手动输入 authCode 模式（微信）
+  // 手动输入 authCode 模式 (支持 QQ/微信)
   if (form.manual && form.code) {
     try {
       await addAccountByCode({
         code: form.code,
+        uin: form.uin,
+        platform: form.platform,
         farmInterval: form.farmInterval,
         friendInterval: form.friendInterval,
       })

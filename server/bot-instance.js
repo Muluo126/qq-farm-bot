@@ -1113,9 +1113,43 @@ class BotInstance extends EventEmitter {
     // ================================================================
 
     async getAllFriends() {
+        // QQ 平台使用 SyncAll（游戏版本更新后 GetAll 不再适用于 QQ）
+        if (this.platform === 'qq') {
+            const body = types.SyncAllFriendsRequest.encode(types.SyncAllFriendsRequest.create({ open_ids: [] })).finish();
+            const { body: replyBody } = await this.sendMsgAsync('gamepb.friendpb.FriendService', 'SyncAll', body);
+            return types.SyncAllFriendsReply.decode(replyBody);
+        }
+        // 微信平台保持使用 GetAll
         const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({})).finish();
         const { body: replyBody } = await this.sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body);
         return types.GetAllFriendsReply.decode(replyBody);
+    }
+
+    /**
+     * 预检查某操作是否可执行
+     * @param {number} friendGid - 好友 GID
+     * @param {number} operationId - 操作类型 ID
+     * @returns {{ canOperate: boolean, canStealNum: number }}
+     */
+    async checkCanOperateRemote(friendGid, operationId) {
+        if (!types.CheckCanOperateRequest || !types.CheckCanOperateReply) {
+            return { canOperate: true, canStealNum: 0 };
+        }
+        try {
+            const body = types.CheckCanOperateRequest.encode(types.CheckCanOperateRequest.create({
+                host_gid: toLong(friendGid),
+                operation_id: toLong(operationId),
+            })).finish();
+            const { body: replyBody } = await this.sendMsgAsync('gamepb.plantpb.PlantService', 'CheckCanOperate', body);
+            const reply = types.CheckCanOperateReply.decode(replyBody);
+            return {
+                canOperate: !!reply.can_operate,
+                canStealNum: toNum(reply.can_steal_num),
+            };
+        } catch {
+            // 预检查失败时降级为不拦截
+            return { canOperate: true, canStealNum: 0 };
+        }
     }
 
     async enterFriendFarm(friendGid) {

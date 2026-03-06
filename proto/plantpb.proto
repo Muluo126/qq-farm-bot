@@ -261,6 +261,17 @@ message UnlockLandReply {
     LandInfo land = 1;
 }
 
+// --- 检查操作是否可执行 ---
+message CheckCanOperateRequest {
+    int64 host_gid = 1;         // 目标农场主GID
+    int64 operation_id = 2;     // 操作类型ID
+}
+
+message CheckCanOperateReply {
+    bool can_operate = 1;       // 是否可以操作
+    int64 can_steal_num = 2;    // 可偷取数量
+}
+
 // ============ 服务器推送通知 ============
 
 // 土地状态变化通知 (被放虫/放草/偷菜等)

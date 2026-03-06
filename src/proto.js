@@ -93,6 +93,12 @@ async function loadProto() {
     types.GetApplicationsReply = root.lookupType('gamepb.friendpb.GetApplicationsReply');
     types.AcceptFriendsRequest = root.lookupType('gamepb.friendpb.AcceptFriendsRequest');
     types.AcceptFriendsReply = root.lookupType('gamepb.friendpb.AcceptFriendsReply');
+    types.SyncAllFriendsRequest = root.lookupType('gamepb.friendpb.SyncAllRequest');
+    types.SyncAllFriendsReply = root.lookupType('gamepb.friendpb.SyncAllReply');
+
+    // 操作预检查
+    types.CheckCanOperateRequest = root.lookupType('gamepb.plantpb.CheckCanOperateRequest');
+    types.CheckCanOperateReply = root.lookupType('gamepb.plantpb.CheckCanOperateReply');
 
     // 访问
     types.VisitEnterRequest = root.lookupType('gamepb.visitpb.EnterRequest');

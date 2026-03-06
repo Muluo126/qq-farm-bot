@@ -5,6 +5,9 @@
  *  默认端口: 3000  (可通过 PORT 环境变量覆盖)
  */
 
+// 加载 .env 配置（本地开发，不影响已有环境变量）
+require('dotenv').config();
+
 const path = require('path');
 const express = require('express');
 const http = require('http');

@@ -13,6 +13,7 @@ const { BotInstance } = require('./bot-instance');
 const db = require('./database');
 const { requestQrLogin, getQrCodeBase64 } = require('./qr-service');
 const { CONFIG } = require('../src/config');
+const emailService = require('./email-service');
 
 class BotManager extends EventEmitter {
     constructor() {
@@ -243,6 +244,16 @@ class BotManager extends EventEmitter {
         bot.on('statusChange', (data) => {
             db.updateUserStatus(uin, data.newStatus);
             this.emit('botStatusChange', data);
+            // 账号从运行中异常断线时发送邮件通知
+            if (data.oldStatus === 'running' && data.newStatus === 'error') {
+                const mailSettings = db.getMailSettings();
+                if (mailSettings.mailEnabled && mailSettings.mailTo) {
+                    const nickname = data.userState && data.userState.name ? data.userState.name : uin;
+                    const bot = this.bots.get(uin);
+                    const reason = bot ? bot.errorMessage : '未知原因';
+                    emailService.sendDisconnectAlert(uin, nickname, reason, mailSettings.mailTo);
+                }
+            }
         });
 
         bot.on('stateUpdate', (data) => {
