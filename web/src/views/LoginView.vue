@@ -2,7 +2,9 @@
   <div class="login-page">
     <div class="login-card">
       <div class="login-header">
-        <el-icon :size="48" color="#67C23A"><Sunny /></el-icon>
+        <div class="login-logo-wrapper">
+          <img :src="'/assets/docs/Main.png'" class="login-logo" alt="Logo" />
+        </div>
         <h1>QQ 农场助手</h1>
         <p class="login-subtitle">多账号自动化管理平台(admin)</p>
       </div>
@@ -177,8 +179,27 @@ async function handleRegister() {
 
 .login-header h1 {
   color: var(--text);
-  font-size: 24px;
-  margin-top: 12px;
+  font-size: 26px;
+  margin-top: 16px;
+  letter-spacing: 1px;
+}
+
+.login-logo-wrapper {
+  width: 90px;
+  height: 90px;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px;
+  border-radius: 20px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.login-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 12px; /* 增加圆角 */
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
 }
 
 .login-subtitle {

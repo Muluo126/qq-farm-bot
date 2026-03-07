@@ -1,5 +1,16 @@
 <template>
   <div class="dashboard">
+    <!-- 欢迎与项目 Logo -->
+    <div class="dashboard-welcome">
+      <div class="welcome-logo-box">
+        <img :src="'/assets/docs/Main.png'" class="welcome-logo" alt="Main Logo" />
+      </div>
+      <div class="welcome-text">
+        <h2 class="welcome-title">农场管家 Dashboard</h2>
+        <p class="welcome-desc">欢迎回来，您的自动化农场正在平稳运行中</p>
+      </div>
+    </div>
+
     <!-- 顶部统计卡片 -->
     <el-row :gutter="12" class="stats-row">
       <el-col :xs="12" :sm="12" :md="6">
@@ -280,6 +291,47 @@ onUnmounted(() => {
 .dashboard {
   max-width: 1400px;
   margin: 0 auto;
+  padding: 20px;
+}
+
+.dashboard-welcome {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 24px;
+  background: var(--bg-surface);
+  padding: 20px 24px;
+  border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.welcome-logo-box {
+  width: 64px;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.welcome-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px; /* 增加圆角 */
+}
+
+.welcome-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.welcome-desc {
+  font-size: 14px;
+  color: var(--text-muted);
 }
 
 .stats-row {

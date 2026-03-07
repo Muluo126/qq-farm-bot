@@ -51,7 +51,13 @@
 - **原因**：Docker 容器默认使用的是 UTC 时区，而中国处于东八区 (UTC+8)。
 - **修复步骤**：
     1. 修改 `docker-compose.yml`，在 `environment` 部分增加 `TZ=Asia/Shanghai` 环境变量。
-- **结果**：重启容器后，日志时间将与宿主机（北京时间）同步。
+- **结果**：过滤逻辑透明化，方便用户通过日志校验配置是否生效。
+
+### 2026-03-08 00:20:00 - BUG修复：Server 启动报错 ReferenceError
+- **问题描述**：执行 `npm start` 时报错 `ReferenceError: Cannot access 'fs' before initialization`。
+- **原因分析**：在 `server/index.js` 中新增图标静态托管逻辑时，为了方便直接使用了 `fs.existsSync`。但原代码中 `fs` 的 `require` 语句被写在了 `main` 函数内部且位置靠后。由于 `const` 定义不具备提升特性，导致在执行到图标映射逻辑时 `fs` 尚未初始化。
+- **修复方案**：将 `require('fs')` 移至 `server/index.js` 的文件起始位置（顶部），确保在整个应用生命周期内可见。
+- **验证**：修复后可以正常启动服务。时间将与宿主机（北京时间）同步。
 
 ## 2026-03-02 23:15
 ### 功能：统计页面增加每日历史汇总表
@@ -243,3 +249,87 @@
     1. **动态识别 SSL**：根据 `MAIL_PORT` 自动设置 `secure` 标志。如果是 465 端口则设为 `true`，其他设置为 `false`。
     2. **延长超时限制**：将 `connectionTimeout`、`greetingTimeout` 和 `socketTimeout` 统一从 5000ms 增加到 15000ms，以提高网络兼容性。
 - **造成BUG的原因**：代码未适配 SSL 直连端口（465）的特殊安全要求，且超时容灾策略在复杂网络环境下过于严格。
+
+### 2026-03-07 20:41:00 - 新功能添加：定时汇报支持方糖 ServerChan 推送
+- **需求描述**：除了邮件通知外，提供推送到微信等通讯工具的可选项，支持 Server酱³ 和 Server酱Turbo API。
+- **思路与实现**：
+    1. **前端配置**：在用户管理的定时汇报板块添加“邮件推送”和“方糖推送”两个独立的开关、通道单选框及 SendKey 文本框。
+    2. **后端配置持久化**：扩展 `server/database.js` 和 `server/routes.js`，利用 `system_settings` 缓存 `report_push_email_enabled` 等新字段。
+    3. **推送服务接入**：在 `server/report-service.js` 中增加 Markdown 渲染 (`buildReportMarkdown`) 及 API 投递 (`sendServerChan`)，适配不同版本接口地址。同时根据开关严格控制发件策略。
+- **结果**：报表可以通过邮件和方糖进行双通道投发，提高了获取汇总数据的便捷性。
+
+### 2026-03-07 21:11:00 - UI 与架构重构：通知渠道全局化及掉线方糖推送
+- **需求描述**：掉线通知也要支持多渠道（方糖）选择；并且管理页面的通知配置排版需要更清晰合理。
+- **思路与实现**：
+    1. **模块抽象**：后端新建 `notification-service.js` 服务，统一封装邮件与 ServerChan (MD转HTML/API请求) 推送逻辑。
+    2. **控制解耦**：将原属于定时汇报的 `serverchan_type` 和 `serverchan_key` 提升为全局环境变量，由不同事件共享调用。
+    3. **掉线通知增强**：修改 `bot-manager.js`，在抛出异常断线时调用统一通知模块，并构造相应的 Markdown 内容。
+    4. **前端排版**：`AdminUsers.vue` 剥离出“全局通知渠道配置”（接收邮箱、SendKey）以及独立的“掉线提醒通知”与“定时汇报通知”控制面板，开关互相独立可自由组合。
+
+### 2026-03-07 21:28:00 - BUG修复：方糖汇报 Markdown 格式失效
+- **问题描述**：用户收到的小时汇报和每日汇报方糖推送不是 Markdown 格式，未能正常排版。
+- **原因分析**：在 `server/report-service.js` 的 `buildReportMarkdown` 方法中，使用了 `\\n` （双斜杠）进行换行。这导致在 JavaScript 字符串中生成了字面量的 `\n` 文本，而不是实际的换行符。当通过 `URLSearchParams` 传递给 ServerChan 时，便无法触发 Markdown 的换行解析。
+- **修复步骤**：将 `buildReportMarkdown` 函数内的所有 `\\n` 替换为正确的换行符 `\n`，确保能够输出规范的多行 Markdown 文本。
+- **结果**：方糖 ServerChan 能够正常识别并渲染 Markdown 表格及层级标题格式。
+
+### 2026-03-07 21:51:00 - 新功能：偷菜跳过好友（白名单）
+- **需求描述**：在配置页面的参数配置部分新增“好友白名单”功能，用户可以从好友列表选择跳过的好友。巡查时遇到这些好友将完全不进农场（同时跳过除草、杀虫、浇水）。
+- **思路与实现**：
+    1. **新增 API**：在 `server/routes.js` 增加 `GET /api/accounts/:uin/friends` 获取当前账号的好友列表。
+    2. **底层拦截**：在 `bot-instance.js` 的 `checkFriends()` 农场巡查预筛选处加入对 `featureToggles.friendBlacklist` 的判断，如果在名单内直接 `continue` 无视。
+    3. **UI 改造**：在 `AccountSettings.vue` 表单中调用 API 渲染多选下拉框，选中的结果随配置信息更新保存为全局属性 `friendBlacklist`。
+
+### 2026-03-07 21:55:00 - BUG修复：测试汇报发送失败 (`sendWithRetry is not a function`)
+- **问题描述**：后台发送测试汇报报错 `TypeError: emailService.sendWithRetry is not a function`。
+- **原因分析**：这是前置重构通知服务 `notification-service.js` 留下的尾巴。`emailService.sendWithRetry` 原本被私有声明在 `report-service.js` 内部，在提取出专门的服务模块后，`email-service.js` 并没有向外暴露这个携带重试机制的方法。
+- **修复步骤**：将原 `report-service.js` 中的 `sendWithRetry` 函数转移到 `email-service.js` 中并声明为 `module.exports` 公共方法。
+- **结果**：邮件发送重试流程补齐，测试汇报与正常汇报可以顺利发信。
+
+### 2026-03-07 22:05:00 - 功能优化：偷菜跳过好友支持手动搜索
+- **优化点**：默认的下拉框选择可能面对几百个好友时由于网名和备注繁复并不容易直接点选。
+- **实现**：前端 `<el-select>` 组件已默认开启 `filterable` 支持输入过滤。为了让手动搜索更直观、精确，在循环渲染 `<el-option>` 时其 `label` 追加了 `(GID)` 信息，修改 placeholder 为提示语：“支持输入昵称或 GID 手动搜索好友...”，支持用户快速模糊查询。
+
+### 2026-03-07 23:35:00 - 新功能：秒收取
+- **需求描述**：每块土地在成熟的最后一秒发起收取请求，以达到秒收效果，防止被偷。
+- **思路与实现**：
+    1. **时间同步**：利用已有服务器时间同步机制，计算出农场作物成熟的精确秒级时间戳（`begin_time`）。
+    2. **精准定时**：在 `bot-instance.js` 的 `checkFarm` 循环中，若发现作物距离成熟不足 60s，则预设一个 `setTimeout` 任务。
+    3. **提前触发**：为了抵消网络延迟，定时器会提前约 200ms 触发收获请求，确保在作物变更为“可收获”状态的第一瞬间完成操作。
+### 2026-03-07 23:45:00 - 优化：黑名单跳过增加日志输出
+- **优化点**：之前跳过黑名单好友或作物时是“静默跳过”，用户无法从日志确认是否生效。
+- **实现**：
+    1. 在 `checkFriends` 过滤 `friendBlacklist` 处增加 `this.log`，输出：`巡查 - 跳过黑名单好友: 昵称(GID)`。
+    2. 在 `analyzeFriendLands` 过滤 `stealBlacklist` 处增加 `this.log`，输出：`偷菜 - 跳过黑名单作物: 作物名(ID)`。
+### 2026-03-08 00:30:00 - UI 重构：土地页面视觉升级
+- **需求**：用户希望点击土地详情后不仅看到文字，还能看到对应的作物图标。同时要求增加进度条显示。
+- **重构内容**：
+    1. **资源托管**：后端 `server/index.js` 增加了对 `gameConfig/seed_images_named` 的静态映射，可通过 `/assets/crops/` 直接访问游戏图标。
+    2. **数据增强**：`BotInstance` 返回的土地数据增加了 `progress`（计算当前阶段生长时间 vs 总时间之比）和 `iconFile`（基于 plantId 匹配的图标名）。
+    3. **UI 改版**：`AccountLands.vue` 由列表改为精致的 Grid 卡片布局。
+        - **图标显示**：每块地显示具体作物的彩色图标。
+        - **成长进度条**：使用 `el-progress` 展示详细进度，支持流光条纹特效。
+        - **多级土地视觉**：针对红、黑、金、翡翠、蓝宝石土地增加了不同的侧边颜色标识和 Tag 配色。
+        - **交互优化**：增加了 Hover 动效和详情 Tooltip。
+- **效果**：土地状态一目了然，视觉效果大幅提升，更具游戏代入感。
+
+### 2026-03-08 01:25:00 - UI 优化：全局集成项目主图标
+- **内容**：将项目主图标 `Main.png` 集成到系统各个角落：
+    1. **静态映射**：后端映射 `docs/images` 目录为 `/assets/docs`。
+    2. **登录页面**：替换原本的 Sunny 矢量图标为高清主图，并增加背光阴影效果。
+    3. **系统 Favicon**：更新 `index.html` 使得浏览器标签页显示绿色嫩芽图标。
+    4. **首页装饰**：Dashboard 增加欢迎区域并展示小型 Logo，提升整体品牌感。
+    5. **侧边栏 Logo**：更新 `MainLayout.vue`，将侧边栏顶部的矢量图标替换为 `Main.png`，并适配了折叠/展开的不同尺寸需求。
+    6. **圆角美化**：为全局所有位置（登录页、首页、侧边栏）的 `Main.png` 增加了 `border-radius` 圆角处理，使图标更加精致美观。
+- **验证**：各页面加载正常，图标显示清晰，样式契合。
+
+### 2026-03-08 01:26:00 - BUG修复：Vite 构建生产环境失败 (Rollup resolve error)
+- **问题描述**：执行 `npm run build:web` 时报错，提示无法解析 `/assets/docs/Main.png`。
+- **原因分析**：Vite 在生产环境构建时，会尝试解析模板中所有静态 `src` 路径。由于 `/assets/docs/` 路径是运行时由后端 Express 映射的虚拟路径，在前端源代码编译阶段并不存在该物理文件，导致 Rollup 报错。
+- **修复方案**：将 `LoginView.vue` 和 `Dashboard.vue` 中的图标引用由静态 `src="..."` 改为 Vue 动态绑定 `:src="'...'"`。这种写法会告知 Vite 这是一个运行时字符串，从而跳过编译期的静态链接检查。
+- **验证**：修改后理论上构建可以顺利通过。
+
+### 2026-03-08 00:20:00 - BUG修复：Server 启动报错 ReferenceError
+- **问题描述**：执行 `npm start` 时报错 `ReferenceError: Cannot access 'fs' before initialization`。
+- **原因分析**：在 `server/index.js` 中新增图标静态托管逻辑时引用了 `fs.existsSync`。但原代码中 `fs` 的 `require` 语句被写在了 `main` 函数内部且位置靠后。由于 `const` 定义不具备提升特性，导致在执行时 `fs` 尚未初始化。
+- **修复方案**：将 `require('fs')` 移至 `server/index.js` 的顶部，确保全局可用。
+- **验证**：服务已可正常启动。

@@ -41,42 +41,73 @@
         v-for="land in landData.lands"
         :key="land.id"
         class="land-card"
-        :class="[land.status || 'locked', { 'has-issue': land.needWater || land.needWeed || land.needBug }]"
+        :class="[land.status || 'locked', `soil-${land.soilType}`, { 'has-issue': land.needWater || land.needWeed || land.needBug }]"
       >
         <div class="land-card-header">
-          <span class="land-id">土地 #{{ land.id }}</span>
+          <span class="land-id">#{{ land.id }}</span>
           <el-tag
             v-if="getSoilName(land.soilType)"
             :type="getSoilColor(land.soilType)"
             size="small"
             round
             effect="dark"
+            class="soil-tag"
           >{{ getSoilName(land.soilType) }}</el-tag>
           <span class="land-status-text">{{ getStatusText(land) }}</span>
         </div>
 
-        <template v-if="land.unlocked && land.status !== 'empty'">
-          <div class="land-plant-name">{{ land.plantName || '-' }}</div>
-          <div class="land-phase">{{ land.phaseName || '' }}</div>
+        <div class="land-content">
+          <template v-if="land.unlocked && land.status !== 'empty'">
+            <div class="land-plant-info">
+              <div class="plant-icon-wrapper">
+                <img v-if="land.iconFile" :src="`/assets/crops/${land.iconFile}`" class="plant-icon" />
+                <div v-else class="plant-icon-placeholder">🌱</div>
+              </div>
+              <div class="plant-text-info">
+                <div class="land-plant-name">{{ land.plantName || '-' }}</div>
+                <div class="land-phase">{{ land.phaseName || '' }}</div>
+              </div>
+            </div>
 
-          <div class="land-time" v-if="land.timeLeftSec">
-            ⏰ {{ formatTimeLeft(land.timeLeftSec) }}
-          </div>
+            <div class="land-progress-box">
+              <div class="progress-label">
+                <span>成长进度</span>
+                <span class="progress-percent" v-if="land.progress">{{ land.progress }}%</span>
+              </div>
+              <el-progress 
+                :percentage="parseFloat(land.progress || 0)" 
+                :status="land.status === 'harvestable' ? 'success' : ''"
+                :stroke-width="8"
+                :show-text="false"
+                striped
+                striped-flow
+              />
+              <div class="land-time" v-if="land.timeLeftSec">
+                ⏰ 剩余: {{ formatTimeLeft(land.timeLeftSec) }}
+              </div>
+            </div>
 
-          <div class="land-issues" v-if="land.needWater || land.needWeed || land.needBug">
-            <el-tag v-if="land.needWater" type="primary" size="small" round>💧 需浇水</el-tag>
-            <el-tag v-if="land.needWeed" type="success" size="small" round>🌱 需除草</el-tag>
-            <el-tag v-if="land.needBug" type="warning" size="small" round>🐛 需除虫</el-tag>
-          </div>
-        </template>
+            <div class="land-issues" v-if="land.needWater || land.needWeed || land.needBug">
+              <el-tooltip content="干旱" v-if="land.needWater"><span class="issue-icon">💦</span></el-tooltip>
+              <el-tooltip content="杂草" v-if="land.needWeed"><span class="issue-icon">🌿</span></el-tooltip>
+              <el-tooltip content="害虫" v-if="land.needBug"><span class="issue-icon">🐛</span></el-tooltip>
+            </div>
+          </template>
 
-        <template v-else-if="!land.unlocked">
-          <div class="land-locked">🔒 未解锁</div>
-        </template>
+          <template v-else-if="!land.unlocked">
+            <div class="land-center-state">
+              <div class="state-icon">🔒</div>
+              <div class="state-text">未解锁</div>
+            </div>
+          </template>
 
-        <template v-else>
-          <div class="land-empty-text">空地</div>
-        </template>
+          <template v-else>
+            <div class="land-center-state">
+              <div class="state-icon">🕳️</div>
+              <div class="state-text">空地</div>
+            </div>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -129,12 +160,12 @@ function getStatusText(land) {
 }
 
 function getSoilName(type) {
-  const map = { 1: '普通', 2: '红土地', 3: '黑土地', 4: '金土地' }
+  const map = { 1: '普通', 2: '红土地', 3: '黑土地', 4: '金土地', 5: '翡翠', 6: '蓝宝石' }
   return map[type] || ''
 }
 
 function getSoilColor(type) {
-  const map = { 1: 'info', 2: 'danger', 3: '', 4: 'warning' }
+  const map = { 1: 'info', 2: 'danger', 3: 'warning', 4: 'warning', 5: 'success', 6: 'primary' }
   return map[type] || 'info'
 }
 
@@ -201,121 +232,204 @@ onMounted(fetchLands)
 
 .land-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
 }
 
 .land-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
-  min-height: 120px;
-  box-shadow: var(--shadow);
-  transition: box-shadow 0.2s;
+  border-radius: 16px;
+  padding: 16px;
+  min-height: 180px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+
+.land-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* 土地颜色增强 */
+.land-card.soil-2 { border-left: 6px solid #f56c6c; } /* 红 */
+.land-card.soil-3 { border-left: 6px solid #333333; } /* 黑 */
+.land-card.soil-4 { border-left: 6px solid #e6a23c; } /* 金 */
+.land-card.soil-5 { border-left: 6px solid #67c23a; } /* 翡 */
+.land-card.soil-6 { border-left: 6px solid #409eff; } /* 蓝 */
 
 .land-card.harvestable {
-  border-color: var(--color-success);
-  background: var(--bg-base);
-}
-
-.land-card.growing {
-  border-color: var(--accent);
+  background: linear-gradient(135deg, var(--bg-surface) 0%, rgba(103, 194, 58, 0.1) 100%);
+  border-color: rgba(103, 194, 58, 0.4);
 }
 
 .land-card.has-issue {
-  border-color: var(--color-warning);
-}
-
-.land-card.dead {
-  border-color: var(--color-danger);
-  opacity: 0.7;
-}
-
-.land-card.locked {
-  opacity: 0.4;
+  background: linear-gradient(135deg, var(--bg-surface) 0%, rgba(230, 162, 60, 0.05) 100%);
 }
 
 .land-card-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .land-id {
-  font-weight: 600;
-  color: var(--accent);
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--text-muted);
   font-size: 14px;
+}
+
+.soil-tag {
+  font-size: 11px;
+  height: 20px;
+  line-height: 18px;
 }
 
 .land-status-text {
   font-size: 12px;
   color: var(--text-muted);
   margin-left: auto;
+  font-weight: 500;
+}
+
+.land-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.land-plant-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.plant-icon-wrapper {
+  width: 58px;
+  height: 58px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: visible; /* 允许阴影溢出 */
+}
+
+.plant-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* 增加微妙的投影，使图标更有立体感且不突兀 */
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  transition: transform 0.3s ease;
+}
+
+.land-card:hover .plant-icon {
+  transform: scale(1.1) rotate(5deg);
+}
+
+.plant-icon-placeholder {
+  font-size: 24px;
+}
+
+.plant-text-info {
+  display: flex;
+  flex-direction: column;
 }
 
 .land-plant-name {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 2px;
 }
 
 .land-phase {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.land-progress-box {
+  background: var(--bg-hover);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
   margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.progress-percent {
+  color: var(--accent);
 }
 
 .land-time {
-  font-size: 13px;
-  color: var(--color-warning);
-  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  font-weight: 500;
 }
 
 .land-issues {
+  position: absolute;
+  top: 16px;
+  right: 16px;
   display: flex;
   gap: 4px;
-  flex-wrap: wrap;
 }
 
-.land-locked, .land-empty-text {
-  color: var(--text-faint);
+.issue-icon {
+  font-size: 16px;
+  background: var(--bg-surface);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  cursor: help;
+}
+
+.land-center-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+}
+
+.state-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.state-text {
   font-size: 14px;
-  padding-top: 8px;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
-.empty-state {
-  padding: 60px 20px;
-  text-align: center;
-}
+.land-card.locked { opacity: 0.5; filter: grayscale(1); }
 
 @media (max-width: 768px) {
-  .land-summary {
-    gap: 8px;
-  }
-
-  .summary-item {
-    min-width: 80px;
-    padding: 10px;
-  }
-
-  .summary-value {
-    font-size: 22px;
-  }
-
   .land-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .lands-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 }
 </style>

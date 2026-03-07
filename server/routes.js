@@ -277,6 +277,24 @@ router.get('/accounts/:uin/lands', canAccessUin, async (req, res) => {
     }
 });
 
+/** GET /api/accounts/:uin/friends - 获取好友列表 */
+router.get('/accounts/:uin/friends', canAccessUin, async (req, res) => {
+    try {
+        const bot = botManager.bots.get(req.params.uin);
+        if (!bot || bot.status !== 'running') {
+            return res.status(400).json({ ok: false, error: 'Bot 未运行' });
+        }
+        const reply = await bot.getAllFriends();
+        const friends = (reply.game_friends || []).map(f => ({
+            gid: Number(f.gid),
+            name: f.remark || f.name || `GID:${f.gid}`
+        }));
+        res.json({ ok: true, data: friends });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 /** GET /api/accounts/:uin/snapshot - 获取详细快照 (含功能开关、统计) */
 router.get('/accounts/:uin/snapshot', canAccessUin, (req, res) => {
     try {
@@ -495,8 +513,8 @@ router.get('/admin/settings/mail', adminOnly, (req, res) => {
 /** PUT /api/admin/settings/mail */
 router.put('/admin/settings/mail', adminOnly, (req, res) => {
     try {
-        const { mailTo, mailEnabled } = req.body || {};
-        db.saveMailSettings(mailTo, mailEnabled);
+        const { mailTo, mailEnabled, serverChanEnabled, serverChanType, serverChanKey } = req.body || {};
+        db.saveMailSettings(mailTo, mailEnabled !== false, !!serverChanEnabled, serverChanType, serverChanKey);
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -605,8 +623,8 @@ router.get('/admin/settings/report', adminOnly, (req, res) => {
 /** PUT /api/admin/settings/report */
 router.put('/admin/settings/report', adminOnly, (req, res) => {
     try {
-        const { hourlyEnabled, dailyEnabled } = req.body || {};
-        db.saveReportSettings(!!hourlyEnabled, !!dailyEnabled);
+        const { hourlyEnabled, dailyEnabled, pushEmailEnabled, serverChanEnabled, serverChanType, serverChanKey } = req.body || {};
+        db.saveReportSettings(!!hourlyEnabled, !!dailyEnabled, pushEmailEnabled !== false, !!serverChanEnabled, serverChanType, serverChanKey);
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });

@@ -173,4 +173,8 @@ export function testReport(type = 'hourly') {
   return api.post('/admin/report/test', { type })
 }
 
+export function getFriends(uin) {
+  return api.get(`/accounts/${uin}/friends`)
+}
+
 export default api

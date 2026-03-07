@@ -482,14 +482,21 @@ function saveAnnouncement({ title, content }) {
 
 function getMailSettings() {
     const toRow = queryOne(`SELECT value FROM system_settings WHERE key='mail_to'`);
-    const enabledRow = queryOne(`SELECT value FROM system_settings WHERE key='mail_enabled'`);
+    const enabledRow = queryOne(`SELECT value FROM system_settings WHERE key='mail_enabled'`); // 原断线邮件开关
+    const scEnabledRow = queryOne(`SELECT value FROM system_settings WHERE key='disconnect_serverchan_enabled'`); // 断线方糖开关
+    const scTypeRow = queryOne(`SELECT value FROM system_settings WHERE key='report_serverchan_type'`); // 全局方糖类型
+    const scKeyRow = queryOne(`SELECT value FROM system_settings WHERE key='report_serverchan_key'`); // 全局方糖 Key
+
     return {
         mailTo: toRow ? toRow.value : '',
         mailEnabled: enabledRow ? enabledRow.value === '1' : false,
+        serverChanEnabled: scEnabledRow ? scEnabledRow.value === '1' : false,
+        serverChanType: scTypeRow ? scTypeRow.value : 'sc3',
+        serverChanKey: scKeyRow ? scKeyRow.value : '',
     };
 }
 
-function saveMailSettings(mailTo, mailEnabled) {
+function saveMailSettings(mailTo, mailEnabled, serverChanEnabled, serverChanType, serverChanKey) {
     const upsert = (key, val) => {
         const exists = queryOne(`SELECT key FROM system_settings WHERE key=?`, [key]);
         if (exists) {
@@ -500,6 +507,11 @@ function saveMailSettings(mailTo, mailEnabled) {
     };
     upsert('mail_to', mailTo || '');
     upsert('mail_enabled', mailEnabled ? '1' : '0');
+    upsert('disconnect_serverchan_enabled', serverChanEnabled ? '1' : '0');
+
+    // 如果传了类型和key，将其也视为全局通道信息一并更新
+    if (serverChanType !== undefined) upsert('report_serverchan_type', serverChanType);
+    if (serverChanKey !== undefined) upsert('report_serverchan_key', serverChanKey);
     saveToFile();
 }
 
@@ -508,13 +520,17 @@ function saveMailSettings(mailTo, mailEnabled) {
 function getReportSettings() {
     const hourlyRow = queryOne(`SELECT value FROM system_settings WHERE key='report_hourly_enabled'`);
     const dailyRow = queryOne(`SELECT value FROM system_settings WHERE key='report_daily_enabled'`);
+    const pushEmailRow = queryOne(`SELECT value FROM system_settings WHERE key='report_push_email_enabled'`);
+    const scEnabledRow = queryOne(`SELECT value FROM system_settings WHERE key='report_serverchan_enabled'`);
     return {
         hourlyEnabled: hourlyRow ? hourlyRow.value === '1' : false,
         dailyEnabled: dailyRow ? dailyRow.value === '1' : false,
+        pushEmailEnabled: pushEmailRow ? pushEmailRow.value === '1' : true, // 默认为 true 兼容老版本
+        serverChanEnabled: scEnabledRow ? scEnabledRow.value === '1' : false,
     };
 }
 
-function saveReportSettings(hourlyEnabled, dailyEnabled) {
+function saveReportSettings(hourlyEnabled, dailyEnabled, pushEmailEnabled, serverChanEnabled, serverChanType, serverChanKey) {
     const upsert = (key, val) => {
         const exists = queryOne(`SELECT key FROM system_settings WHERE key=?`, [key]);
         if (exists) {
@@ -525,6 +541,12 @@ function saveReportSettings(hourlyEnabled, dailyEnabled) {
     };
     upsert('report_hourly_enabled', hourlyEnabled ? '1' : '0');
     upsert('report_daily_enabled', dailyEnabled ? '1' : '0');
+    upsert('report_push_email_enabled', pushEmailEnabled ? '1' : '0');
+    upsert('report_serverchan_enabled', serverChanEnabled ? '1' : '0');
+
+    // 向后兼容：如果在汇报设置里提交了全局通道数据，也将其写入
+    if (serverChanType !== undefined) upsert('report_serverchan_type', serverChanType);
+    if (serverChanKey !== undefined) upsert('report_serverchan_key', serverChanKey);
     saveToFile();
 }
 

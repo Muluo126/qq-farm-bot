@@ -12,12 +12,14 @@ const EventEmitter = require('events');
 const WebSocket = require('ws');
 const protobuf = require('protobufjs');
 const Long = require('long');
+const fs = require('fs');
+const path = require('path');
 const { types } = require('../src/proto');
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../src/config');
 const {
     getPlantNameBySeedId, getPlantName, getPlantExp,
     formatGrowTime, getPlantGrowTime, getItemName, getFruitName,
-    getPlantRanking, getItemInfo
+    getPlantRanking, getItemInfo, getPlantById
 } = require('../src/gameConfig');
 const db = require('./database');
 
@@ -53,7 +55,48 @@ const TAG_ICONS = {
     '好友': '👥', '申请': '👋',
     '任务': '📝', '仓库': '📦', 'API': '🌐', '配置': '🔧',
 };
-function getTagIcon(tag) { return TAG_ICONS[tag] || '📌'; }
+
+// ============ 作物图标映射缓存 ============
+let CROP_ICON_MAP = null;
+function getCropIconFile(plantId) {
+    if (!CROP_ICON_MAP) {
+        CROP_ICON_MAP = new Map();
+        const iconDir = path.join(__dirname, '..', 'gameConfig', 'seed_images_named');
+        if (fs.existsSync(iconDir)) {
+            const files = fs.readdirSync(iconDir);
+            for (const f of files) {
+                // 1. 提取前导数字 (通常是 seedId)
+                const leadingMatch = f.match(/^(\d+)_/);
+                if (leadingMatch) CROP_ICON_MAP.set(Number(leadingMatch[1]), f);
+
+                // 2. 提取 Crop_ 后的数字 (plantId 的后缀)
+                const cropMatch = f.match(/Crop_(\d+)/i);
+                if (cropMatch) CROP_ICON_MAP.set(Number(cropMatch[1]), f);
+            }
+        }
+    }
+
+    const pid = Number(plantId);
+    if (!pid) return '';
+
+    // 优先尝试直接匹配
+    if (CROP_ICON_MAP.has(pid)) return CROP_ICON_MAP.get(pid);
+
+    // 尝试通过 seed_id 匹配
+    const plantInfo = getPlantById(pid);
+    if (plantInfo && plantInfo.seed_id) {
+        const sid = Number(plantInfo.seed_id);
+        if (CROP_ICON_MAP.has(sid)) return CROP_ICON_MAP.get(sid);
+    }
+
+    // 尝试匹配 ID 的后几位 (例如 1020002 -> 2)
+    const shortId = pid % 100000;
+    if (CROP_ICON_MAP.has(shortId)) return CROP_ICON_MAP.get(shortId);
+
+    return '';
+}
+
+function getTagIcon(tag) { return TAG_ICONS[tag] || 'ℹ️'; }
 
 // ============ BotInstance 类 ============
 
@@ -100,6 +143,7 @@ class BotInstance extends EventEmitter {
         this.farmLoopRunning = false;
         this.farmCheckTimer = null;
         this.isCheckingFarm = false;
+        this.fastHarvestTimers = new Map(); // 秒收定时器: landId -> timeout
 
         // ---------- 好友循环 ----------
         this.friendLoopRunning = false;
@@ -138,6 +182,7 @@ class BotInstance extends EventEmitter {
         this.featureToggles = {
             // ========== 农场基础功能 ==========
             autoHarvest: true,         // 自动收获成熟作物
+            fastHarvest: false,        // 秒收取 (利用服务器时间提前预设任务)
             autoPlant: true,           // 自动种植空地
             autoFertilize: false,       // 自动施肥
             autoWeed: true,            // 自动除草
@@ -873,6 +918,7 @@ class BotInstance extends EventEmitter {
             harvestable: [], needWater: [], needWeed: [], needBug: [],
             growing: [], empty: [], dead: [], harvestableInfo: [],
             growingDetails: [], // 每块生长中土地的详情
+            soonToMature: [],   // 即将成熟的土地 (秒收用)
             unlockable: [],     // 可解锁（开拓）的土地
             upgradable: [],     // 可升级的土地
         };
@@ -940,6 +986,15 @@ class BotInstance extends EventEmitter {
             const phaseName = PHASE_NAMES[phaseVal] || '生长中';
             result.growingDetails.push({ landId: id, name: plantName, phase: phaseName, timeLeft });
             result.growing.push(id);
+
+            // 秒收逻辑：如果距离成熟不到 60 秒，标记为即将成熟
+            if (this.featureToggles.fastHarvest && maturePhase) {
+                const matureBegin = this.toTimeSec(maturePhase.begin_time);
+                const diff = matureBegin - nowSec;
+                if (diff > 0 && diff <= 60) {
+                    result.soonToMature.push({ landId: id, matureTime: matureBegin });
+                }
+            }
         }
         return result;
     }
@@ -979,6 +1034,32 @@ class BotInstance extends EventEmitter {
             if (status.needBug.length > 0) batchOps.push(this.insecticide(status.needBug).then(() => actions.push(`🐛除虫×${status.needBug.length}`)).catch(e => this.logWarn('除虫', e.message)));
             if (status.needWater.length > 0) batchOps.push(this.waterLand(status.needWater).then(() => actions.push(`💦浇水×${status.needWater.length}`)).catch(e => this.logWarn('浇水', e.message)));
             if (batchOps.length > 0) await Promise.all(batchOps);
+
+            // 处理秒收预设
+            for (const item of status.soonToMature) {
+                if (!this.fastHarvestTimers.has(item.landId)) {
+                    const nowSec = this.getServerTimeSec();
+                    const waitSec = item.matureTime - nowSec;
+                    // 提前 200ms 发起请求，抵消网络延迟，确保第一秒收到
+                    const waitMs = Math.max(0, (waitSec * 1000) - 200);
+
+                    const timer = setTimeout(async () => {
+                        this.fastHarvestTimers.delete(item.landId);
+                        try {
+                            const reply = await this.harvest([item.landId]);
+                            if (reply && reply.items && reply.items.length > 0) {
+                                this.log('秒收', `${getPlantName(item.landId) || '作物'} 已在成熟瞬间收获`);
+                                // 手动触发一次状态更新或在下一次 checkFarm 统计
+                            }
+                        } catch (e) {
+                            this.logWarn('秒收', `定时收获失败: ${e.message}`);
+                        }
+                    }, waitMs);
+
+                    this.fastHarvestTimers.set(item.landId, timer);
+                    this.log('秒收', `已为地块 ${item.landId} 预设秒收任务 (约 ${waitSec}s 后)`);
+                }
+            }
 
             let harvestedLandIds = [];
             if (status.harvestable.length > 0) {
@@ -1298,6 +1379,7 @@ class BotInstance extends EventEmitter {
                     }
                     // 检查黑名单
                     if (this.featureToggles.stealBlacklist && this.featureToggles.stealBlacklist.includes(plantId)) {
+                        this.log('偷菜', `跳过黑名单作物: ${getPlantName(plantId) || '未知'}(${plantId})`);
                         continue;
                     }
                     result.stealable.push(id);
@@ -1445,6 +1527,12 @@ class BotInstance extends EventEmitter {
             for (const f of friends) {
                 const gid = toNum(f.gid);
                 if (gid === this.userState.gid || visitedGids.has(gid)) continue;
+                if (this.featureToggles.friendBlacklist && this.featureToggles.friendBlacklist.includes(gid)) {
+                    const fname = f.remark || f.name || `GID:${gid}`;
+                    this.log('巡查', `跳过黑名单好友: ${fname}(${gid})`);
+                    skippedCount++;
+                    continue;
+                }
                 const name = f.remark || f.name || `GID:${gid}`;
                 const p = f.plant;
                 const stealNum = p ? toNum(p.steal_plant_num) : 0;
@@ -2375,18 +2463,30 @@ class BotInstance extends EventEmitter {
                     detail.status = 'dead';
                 } else if (phaseVal === PlantPhase.MATURE) {
                     detail.status = 'harvestable';
+                    detail.progress = 100;
                 } else {
                     detail.status = 'growing';
-                    // 计算剩余时间
+                    // 计算剩余时间与进度
+                    const firstPhase = plant.phases[0];
                     const maturePhase = plant.phases.find(p => p.phase === PlantPhase.MATURE);
-                    if (maturePhase) {
+                    if (maturePhase && firstPhase) {
                         const nowSec = this.getServerTimeSec();
+                        const beginSec = this.toTimeSec(firstPhase.begin_time);
                         const matureBegin = this.toTimeSec(maturePhase.begin_time);
+
                         if (matureBegin > nowSec) {
                             detail.timeLeftSec = matureBegin - nowSec;
+                            const totalGrowth = matureBegin - beginSec;
+                            const currentGrowth = nowSec - beginSec;
+                            detail.progress = Math.min(99.9, Math.max(0, (currentGrowth / totalGrowth) * 100)).toFixed(1);
+                        } else {
+                            detail.progress = 100;
                         }
+                    } else {
+                        detail.progress = 0;
                     }
                 }
+                detail.iconFile = getCropIconFile(plantId);
 
                 // 需要处理项
                 detail.needWater = analysis.needWater.includes(id);

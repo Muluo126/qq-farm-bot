@@ -11,6 +11,7 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
 const { Server: SocketServer } = require('socket.io');
 
 // ---------- 初始化 Proto & 游戏配置 (共享只读资源) ----------
@@ -59,9 +60,21 @@ async function main() {
     // API 路由
     app.use('/api', apiRoutes);
 
+    // 静态资源 - 游戏图片 (图标)
+    const iconPath = path.join(__dirname, '..', 'gameConfig', 'seed_images_named');
+    if (fs.existsSync(iconPath)) {
+        app.use('/assets/crops', express.static(iconPath));
+        console.log(`[Server] 作物图标目录已映射: /assets/crops -> ${iconPath}`);
+    }
+
+    // 静态资源 - 项目图片
+    const docsImgPath = path.join(__dirname, '..', 'docs', 'images');
+    if (fs.existsSync(docsImgPath)) {
+        app.use('/assets/docs', express.static(docsImgPath));
+    }
+
     // 静态文件 - 前端打包产物
     const distPath = path.join(__dirname, '..', 'web', 'dist');
-    const fs = require('fs');
     if (fs.existsSync(distPath)) {
         app.use(express.static(distPath));
         // SPA fallback

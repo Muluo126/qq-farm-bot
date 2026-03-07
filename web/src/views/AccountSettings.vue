@@ -4,6 +4,10 @@
     <div class="section-card">
       <h3 class="section-title">参数配置</h3>
       <el-form label-width="120px" class="config-form">
+        <el-form-item label="秒收取模式">
+          <el-switch v-model="fastHarvest" active-text="开启" inactive-text="关闭" />
+          <div class="unit">开启后，作物成熟瞬间立即执行收获请求(误差<200ms)，效率最高。</div>
+        </el-form-item>
         <el-form-item label="农场巡查间隔">
           <el-input-number v-model="farmIntervalSec" :min="1" :max="3600" :step="1" />
           <span class="unit">秒 (最低1秒)</span>
@@ -55,6 +59,27 @@
             />
           </el-select>
           <div class="unit">多选，选中的作物将不会被自动偷取</div>
+        </el-form-item>
+        <el-form-item label="偷菜跳过好友">
+          <el-select
+            v-model="friendBlacklist"
+            multiple
+            filterable
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="支持输入昵称或 GID 手动搜索好友..."
+            style="width: 380px"
+            :loading="friendsLoading"
+          >
+            <el-option
+              v-for="f in friendList"
+              :key="f.gid"
+              :value="f.gid"
+              :label="`${f.name} (${f.gid})`"
+            />
+          </el-select>
+          <div class="unit">多选，选中的好友农场将不会进入巡查(同时跳过除草/杀虫/浇水)</div>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="saveConfig" :loading="saving">保存配置</el-button>
@@ -116,7 +141,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getAccountSnapshot, updateAccountConfig, getPlantRanking, getCropList, updateToggles } from '../api/index.js'
+import { getAccountSnapshot, updateAccountConfig, getPlantRanking, getCropList, updateToggles, getFriends } from '../api/index.js'
 
 const props = defineProps({ uin: String })
 
@@ -125,13 +150,17 @@ const friendIntervalSec = ref(10)
 const preferredSeedId = ref(29999)  // 29999 = 白萝卜仙人
 const saving = ref(false)
 const userLevel = ref(1)
+const fastHarvest = ref(false)
 const stealBlacklist = ref([])
+const friendBlacklist = ref([])
 const featureToggles = ref({})
 
 const ranking = ref([])
 const rankingLoading = ref(false)
 const cropList = ref([])
 const cropListLoading = ref(false)
+const friendList = ref([])
+const friendsLoading = ref(false)
 
 async function fetchConfig() {
   try {
@@ -145,7 +174,9 @@ async function fetchConfig() {
     
     // 加载黑名单
     featureToggles.value = data.featureToggles || {}
+    fastHarvest.value = featureToggles.value.fastHarvest || false
     stealBlacklist.value = featureToggles.value.stealBlacklist || []
+    friendBlacklist.value = featureToggles.value.friendBlacklist || []
   } catch (e) {
     console.error('获取配置失败:', e)
   }
@@ -163,7 +194,9 @@ async function saveConfig() {
     // 保存黑名单到 featureToggles
     await updateToggles(props.uin, {
       ...featureToggles.value,
-      stealBlacklist: stealBlacklist.value
+      fastHarvest: fastHarvest.value,
+      stealBlacklist: stealBlacklist.value,
+      friendBlacklist: friendBlacklist.value
     })
 
     ElMessage.success('配置已保存')
@@ -194,6 +227,16 @@ async function fetchCropList() {
   }
 }
 
+async function fetchFriendList() {
+  friendsLoading.value = true
+  try {
+    const res = await getFriends(props.uin)
+    friendList.value = res.data || []
+  } catch { /* */ } finally {
+    friendsLoading.value = false
+  }
+}
+
 function formatGrowTime(sec) {
   if (!sec) return '-'
   if (sec < 60) return `${sec}秒`
@@ -207,6 +250,7 @@ onMounted(async () => {
   await fetchConfig()
   fetchRanking()
   fetchCropList()
+  fetchFriendList()
 })
 </script>
 

@@ -13,7 +13,7 @@ const { BotInstance } = require('./bot-instance');
 const db = require('./database');
 const { requestQrLogin, getQrCodeBase64 } = require('./qr-service');
 const { CONFIG } = require('../src/config');
-const emailService = require('./email-service');
+const { pushNotification } = require('./notification-service');
 
 class BotManager extends EventEmitter {
     constructor() {
@@ -243,15 +243,48 @@ class BotManager extends EventEmitter {
 
         bot.on('statusChange', (data) => {
             db.updateUserStatus(uin, data.newStatus);
-            this.emit('botStatusChange', data);
-            // 账号从运行中异常断线时发送邮件通知
+            // 账号从运行中异常断线时发送通知
             if (data.oldStatus === 'running' && data.newStatus === 'error') {
                 const mailSettings = db.getMailSettings();
-                if (mailSettings.mailEnabled && mailSettings.mailTo) {
+                if (mailSettings.mailEnabled || mailSettings.serverChanEnabled) {
                     const nickname = data.userState && data.userState.name ? data.userState.name : uin;
                     const bot = this.bots.get(uin);
                     const reason = bot ? bot.errorMessage : '未知原因';
-                    emailService.sendDisconnectAlert(uin, nickname, reason, mailSettings.mailTo);
+                    const timeStr = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+                    const subject = `⚠️ QQ农场账号掉线提醒 - ${nickname || uin}`;
+
+                    const md = `**⚠️ 您的 QQ 农场机器人账号已断线**\n\n- **账号**: ${nickname || '未知'} (${uin})\n- **时间**: ${timeStr}\n- **原因**: ${reason || '未知'}`;
+
+                    const html = `
+                        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+                            <div style="background: #f56c6c; color: white; padding: 16px 24px;">
+                                <h2 style="margin: 0;">⚠️ 账号掉线提醒</h2>
+                            </div>
+                            <div style="padding: 24px;">
+                                <p style="margin: 0 0 12px;">您的 QQ 农场机器人账号已断线，请尽快检查。</p>
+                                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                                    <tr style="background: #f5f7fa;">
+                                        <td style="padding: 8px 12px; font-weight: bold; width: 80px;">账号</td>
+                                        <td style="padding: 8px 12px;">${nickname || '未知'} (${uin})</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px 12px; font-weight: bold;">时间</td>
+                                        <td style="padding: 8px 12px;">${timeStr}</td>
+                                    </tr>
+                                    <tr style="background: #f5f7fa;">
+                                        <td style="padding: 8px 12px; font-weight: bold;">原因</td>
+                                        <td style="padding: 8px 12px; color: #f56c6c;">${reason || '未知'}</td>
+                                    </tr>
+                                </table>
+                                <p style="margin-top: 16px; color: #909399; font-size: 13px;">此通知由 QQ Farm Bot 自动发送。</p>
+                            </div>
+                        </div>
+                    `;
+
+                    pushNotification(subject, md, html, {
+                        useEmail: mailSettings.mailEnabled,
+                        useSc: mailSettings.serverChanEnabled
+                    }).catch(e => console.error('[推送] 断线通知发起失败', e));
                 }
             }
         });

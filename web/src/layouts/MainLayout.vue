@@ -3,7 +3,9 @@
     <!-- 侧边栏 -->
     <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="sidebar-logo">
-        <el-icon :size="28" color="#67C23A"><Sunny /></el-icon>
+        <div class="logo-img-wrapper" :class="{ small: sidebarCollapsed }">
+          <img :src="'/assets/docs/Main.png'" class="logo-img" alt="Logo" />
+        </div>
         <span v-if="!sidebarCollapsed" class="logo-text">QQ农场助手</span>
       </div>
 
@@ -179,7 +181,9 @@
     <div class="mobile-overlay" v-if="mobileMenuOpen" @click="mobileMenuOpen = false" />
     <aside class="mobile-sidebar" :class="{ open: mobileMenuOpen }">
       <div class="sidebar-logo">
-        <el-icon :size="28" color="#67C23A"><Sunny /></el-icon>
+        <div class="logo-img-wrapper">
+          <img :src="'/assets/docs/Main.png'" class="logo-img" alt="Logo" />
+        </div>
         <span class="logo-text">QQ农场助手</span>
       </div>
       <div class="account-selector" v-if="ownAccounts.length > 0">
@@ -365,9 +369,30 @@ onUnmounted(() => {
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 16px;
   border-bottom: 1px solid var(--sidebar-border);
+  height: 64px;
+}
+
+.logo-img-wrapper {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.logo-img-wrapper.small {
+  width: 28px;
+  height: 28px;
+}
+
+.logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px; /* 增加圆角 */
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .logo-text {
@@ -375,6 +400,7 @@ onUnmounted(() => {
   font-weight: 700;
   color: var(--sidebar-text);
   white-space: nowrap;
+  letter-spacing: 0.5px;
 }
 
 .account-selector {

@@ -12,7 +12,7 @@
  */
 
 const db = require('./database');
-const { sendMail } = require('./email-service');
+const { pushNotification } = require('./notification-service');
 
 // ============ 定时器 ============
 
@@ -84,9 +84,8 @@ async function generateAndSendReport(type, force = false) {
         if (type === 'daily' && !settings.dailyEnabled) return;
     }
 
-    const mailSettings = db.getMailSettings();
-    if (!mailSettings.mailTo) {
-        console.log(`[汇报] 未配置收件邮箱，跳过 ${type} 汇报`);
+    if (!settings.pushEmailEnabled && !settings.serverChanEnabled) {
+        console.log(`[汇报] 邮件和方糖推送均未启用，跳过 ${type} 汇报`);
         return;
     }
 
@@ -95,12 +94,15 @@ async function generateAndSendReport(type, force = false) {
     const from = new Date(now.getTime() - hours * 3600 * 1000);
     const reportData = collectReportData(hours);
     const html = buildReportHTML(type, reportData, from, now);
+    const md = buildReportMarkdown(type, reportData, from, now);
     const typeLabel = type === 'daily' ? '每日' : '每小时';
     const timeStr = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
     const subject = `📊 QQ农场 ${typeLabel}汇报 - ${timeStr}`;
 
-    await sendWithRetry(mailSettings.mailTo, subject, html);
-    console.log(`[汇报] ${typeLabel}汇报已发送至 ${mailSettings.mailTo}`);
+    await pushNotification(subject, md, html, {
+        useEmail: settings.pushEmailEnabled,
+        useSc: settings.serverChanEnabled
+    });
 }
 
 /**
@@ -216,6 +218,77 @@ function buildReportHTML(type, data, from, to) {
 </body>
 </html>
     `.trim();
+}
+
+/**
+ * 构造 Markdown 格式的汇报内容 (供 ServerChan 使用)
+ */
+function buildReportMarkdown(type, data, from, to) {
+    const typeLabel = type === 'daily' ? '每日汇报' : '每小时汇报';
+    const fmt = (d) => d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+    const { accountsData, globalStats, globalStealRanking } = data;
+
+    const gHarvest = (globalStats.harvest || []).reduce((s, r) => ({ amount: s.amount + r.amount, gold: s.gold + r.gold }), { amount: 0, gold: 0 });
+    const gSteal = (globalStats.steal || []).reduce((s, r) => ({ amount: s.amount + r.amount, gold: s.gold + r.gold }), { amount: 0, gold: 0 });
+
+    let md = `## QQ农场 ${typeLabel}\n\n`;
+    md += `📅 ${fmt(from)} ～ ${fmt(to)}\n\n`;
+    md += `**全局概览**\n\n`;
+    md += `- 🌾 收获总数: **${gHarvest.amount.toLocaleString()}** (💰 ${gHarvest.gold.toLocaleString()})\n`;
+    md += `- 🥷 偷菜总数: **${gSteal.amount.toLocaleString()}** (💰 ${gSteal.gold.toLocaleString()})\n`;
+    md += `- 💰 总收入: **${(gHarvest.gold + gSteal.gold).toLocaleString()}**\n\n`;
+
+    md += `---\n\n`;
+
+    for (const acc of accountsData) {
+        const { stats, stealRanking } = acc;
+        const statusDot = acc.status === 'running' ? '🟢' : '⚪';
+        const harvestTotal = (stats.harvest || []).reduce((s, r) => ({ amount: s.amount + r.amount, gold: s.gold + r.gold }), { amount: 0, gold: 0 });
+        const stealTotal = (stats.steal || []).reduce((s, r) => ({ amount: s.amount + r.amount, gold: s.gold + r.gold }), { amount: 0, gold: 0 });
+
+        md += `### ${statusDot} ${acc.nickname} (Lv.${acc.level})\n\n`;
+        md += `- EXP ${acc.exp.toLocaleString()} | 💰 ${acc.gold.toLocaleString()}\n`;
+        md += `- 🌾 收获: ${harvestTotal.amount.toLocaleString()} | 💰 ${harvestTotal.gold.toLocaleString()}\n`;
+        md += `- 🥷 偷菜: ${stealTotal.amount.toLocaleString()} | 💰 ${stealTotal.gold.toLocaleString()}\n\n`;
+
+        const harvestRows = (stats.harvest || []).filter(r => r.amount > 0);
+        if (harvestRows.length > 0) {
+            md += `*收获明细*\n\n`;
+            for (const r of harvestRows) {
+                md += `- ${r.target}: ${r.amount.toLocaleString()} (💰 ${r.gold.toLocaleString()})\n`;
+            }
+            md += `\n`;
+        }
+
+        const stealRows = (stats.steal || []).filter(r => r.amount > 0);
+        if (stealRows.length > 0) {
+            md += `*偷菜明细*\n\n`;
+            for (const r of stealRows) {
+                md += `- ${r.target}: ${r.amount.toLocaleString()} (💰 ${r.gold.toLocaleString()})\n`;
+            }
+            md += `\n`;
+        }
+
+        if (stealRanking && stealRanking.length > 0) {
+            md += `*偷菜排行*\n\n`;
+            for (let i = 0; i < Math.min(5, stealRanking.length); i++) {
+                const r = stealRanking[i];
+                md += `${i + 1}. ${r.friendName}: ${r.amount.toLocaleString()} (💰 ${r.gold.toLocaleString()})\n`;
+            }
+            md += `\n`;
+        }
+        md += `---\n\n`;
+    }
+
+    if (globalStealRanking && globalStealRanking.length > 0) {
+        md += `### 🏆 偷菜好友排行 (全局)\n\n`;
+        for (let i = 0; i < Math.min(10, globalStealRanking.length); i++) {
+            const r = globalStealRanking[i];
+            md += `${i + 1}. ${r.friendName}: ${r.amount.toLocaleString()} (💰 ${r.gold.toLocaleString()})\n`;
+        }
+    }
+
+    return md;
 }
 
 /**
@@ -374,22 +447,7 @@ function esc(str) {
     return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ============ 发送（带重试） ============
-
-async function sendWithRetry(to, subject, html, maxRetries = 3) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            await sendMail({ to, subject, html });
-            return;
-        } catch (err) {
-            console.error(`[汇报] 发送失败 (第${attempt}/${maxRetries}次): ${err.message}`);
-            if (attempt < maxRetries) {
-                await new Promise(r => setTimeout(r, 3000 * attempt));
-            } else {
-                throw err;
-            }
-        }
-    }
-}
+// ============ 通知 ============
+// 发送逻辑已提取到 notification-service.js 中兼容
 
 module.exports = { startScheduler, stopScheduler, generateAndSendReport };

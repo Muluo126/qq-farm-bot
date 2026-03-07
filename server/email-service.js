@@ -112,4 +112,23 @@ async function sendMail({ to, subject, html }) {
     });
 }
 
-module.exports = { sendDisconnectAlert, sendMail };
+/**
+ * 带有重试机制的发送
+ */
+async function sendWithRetry(to, subject, html, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await sendMail({ to, subject, html });
+            return;
+        } catch (err) {
+            console.error(`[邮件] 发送失败 (第${attempt}/${maxRetries}次): ${err.message}`);
+            if (attempt < maxRetries) {
+                await new Promise(r => setTimeout(r, 3000 * attempt));
+            } else {
+                throw err;
+            }
+        }
+    }
+}
+
+module.exports = { sendDisconnectAlert, sendMail, sendWithRetry };
