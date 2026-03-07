@@ -27,12 +27,12 @@ function getTransporter() {
     transporter = nodemailer.createTransport({
         host: MAIL_HOST,
         port: MAIL_PORT,
-        secure: false, // 587 使用 STARTTLS
+        secure: MAIL_PORT === 465, // 465 端口使用 SSL 直连
         auth: { user: MAIL_USER, pass: MAIL_PASS },
         tls: { rejectUnauthorized: false },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 5000,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 15000,
     });
     return transporter;
 }

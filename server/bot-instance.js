@@ -2120,37 +2120,23 @@ class BotInstance extends EventEmitter {
         if (!force && this._lastExtraUserUpdateAt && now - this._lastExtraUserUpdateAt < 300000) return;
 
         try {
-            // 1. 化肥容器
+            // 1. 获取所有状态 (化肥容器、收藏点均从背包获取)
             const bagReply = await this._getBag();
             const items = this._getBagItems(bagReply);
-            let normalSec = 0, organicSec = 0;
+
+            let normalFert = 0, organicFert = 0;
+            let normalPoints = 0, classicPoints = 0;
+
             for (const it of items) {
                 const id = toNum(it.id);
-                if (id === 1011) normalSec = toNum(it.count);
-                if (id === 1012) organicSec = toNum(it.count);
+                const count = toNum(it.count);
+                if (id === 1011) normalFert = count;
+                else if (id === 1012) organicFert = count;
+                else if (id === 3001) normalPoints = count;
+                else if (id === 3002) classicPoints = count;
             }
-            this.userState.fertilizer = { normal: normalSec, organic: organicSec };
 
-            // 2. 收藏点
-            const illustratedReq = types.GetIllustratedListV2Request.encode(
-                types.GetIllustratedListV2Request.create({ refresh: true, full: true })
-            ).finish();
-            const { body: replyBody } = await this.sendMsgAsync(
-                'gamepb.illustratedpb.IllustratedService', 'GetIllustratedListV2', illustratedReq
-            );
-            const illustratedReply = types.GetIllustratedListV2Reply.decode(replyBody);
-
-            let normalPoints = 0, classicPoints = 0;
-            if (illustratedReply.items) {
-                for (const it of illustratedReply.items) {
-                    // 只要解锁了或收获过就算收藏点
-                    if (it.unlocked || toNum(it.harvest_count) > 0) {
-                        // category 2 为典藏，其他通常为普通
-                        if (toNum(it.category) === 2) classicPoints++;
-                        else normalPoints++;
-                    }
-                }
-            }
+            this.userState.fertilizer = { normal: normalFert, organic: organicFert };
             this.userState.collectionPoints = { normal: normalPoints, classic: classicPoints };
 
             this._lastExtraUserUpdateAt = now;
