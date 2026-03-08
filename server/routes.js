@@ -110,7 +110,7 @@ router.use(authMiddleware);
 /** POST /api/accounts/add-by-code - authCode 添加账号 (支持 QQ/微信) */
 router.post('/accounts/add-by-code', async (req, res) => {
     try {
-        const { code, uin: manualUin, platform, farmInterval, friendInterval } = req.body || {};
+        const { code, uin: manualUin, platform, farmInterval, farmIntervalMax, friendInterval, friendIntervalMax } = req.body || {};
         if (!code) {
             return res.status(400).json({ ok: false, error: 'authCode 不能为空' });
         }
@@ -130,7 +130,13 @@ router.post('/accounts/add-by-code', async (req, res) => {
         // 创建或更新用户记录
         let user = db.getUserByUin(uin);
         if (!user) {
-            db.createUser({ uin, platform: actualPlatform, farmInterval: farmInterval || 10000, friendInterval: friendInterval || 10000 });
+            db.createUser({
+                uin, platform: actualPlatform,
+                farmInterval: farmInterval || 10000,
+                farmIntervalMax: farmIntervalMax || farmInterval || 10000,
+                friendInterval: friendInterval || 10000,
+                friendIntervalMax: friendIntervalMax || friendInterval || 10000
+            });
         } else {
             db.updateUser(uin, { platform: actualPlatform });
         }
@@ -149,7 +155,9 @@ router.post('/accounts/add-by-code', async (req, res) => {
 
             // 如果前端没有明确传入指定值，则保留 DB 中已有的值
             startOpts.farmInterval = farmInterval || user.farm_interval || 10000;
+            startOpts.farmIntervalMax = farmIntervalMax || user.farm_interval_max || startOpts.farmInterval;
             startOpts.friendInterval = friendInterval || user.friend_interval || 10000;
+            startOpts.friendIntervalMax = friendIntervalMax || user.friend_interval_max || startOpts.friendInterval;
         }
 
         await botManager._startBot(uin, code, startOpts);
@@ -364,8 +372,8 @@ router.get('/crop-list', (req, res) => {
 router.post('/accounts/:uin/qr-login', async (req, res) => {
     try {
         const { uin } = req.params;
-        const { platform, farmInterval, friendInterval } = req.body || {};
-        const result = await botManager.startQrLogin(uin, { platform, farmInterval, friendInterval });
+        const { platform, farmInterval, farmIntervalMax, friendInterval, friendIntervalMax } = req.body || {};
+        const result = await botManager.startQrLogin(uin, { platform, farmInterval, farmIntervalMax, friendInterval, friendIntervalMax });
 
         // 普通用户添加账号时，自动绑定到该用户
         if (req.user.role !== 'admin') {

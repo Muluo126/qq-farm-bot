@@ -65,7 +65,12 @@
               </div>
               <div class="plant-text-info">
                 <div class="land-plant-name">{{ land.plantName || '-' }}</div>
-                <div class="land-phase">{{ land.phaseName || '' }}</div>
+                <div class="land-phase">
+                  {{ land.phaseName || '' }}
+                  <span v-if="land.totalSeasons > 1" class="season-info">
+                    第 {{ land.currentSeason }}/{{ land.totalSeasons }} 季
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -354,6 +359,18 @@ onMounted(fetchLands)
 .land-phase {
   font-size: 13px;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.season-info {
+  font-size: 11px;
+  background: var(--bg-hover);
+  color: var(--color-warning);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(230, 162, 60, 0.2);
 }
 
 .land-progress-box {

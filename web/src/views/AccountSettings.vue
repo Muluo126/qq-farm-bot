@@ -9,12 +9,20 @@
           <div class="unit">开启后，作物成熟瞬间立即执行收获请求(误差<200ms)，效率最高。</div>
         </el-form-item>
         <el-form-item label="农场巡查间隔">
-          <el-input-number v-model="farmIntervalSec" :min="1" :max="3600" :step="1" />
-          <span class="unit">秒 (最低1秒)</span>
+          <div style="display: flex; align-items: center">
+            <el-input-number v-model="farmIntervalSec" :min="1" :max="60" :step="1" size="small" />
+            <span style="margin: 0 8px">-</span>
+            <el-input-number v-model="farmIntervalMaxSec" :min="1" :max="60" :step="1" size="small" />
+            <span class="unit" style="margin-left: 8px">秒随机 (1-60s)</span>
+          </div>
         </el-form-item>
         <el-form-item label="好友巡查间隔">
-          <el-input-number v-model="friendIntervalSec" :min="1" :max="3600" :step="1" />
-          <span class="unit">秒 (最低1秒)</span>
+          <div style="display: flex; align-items: center">
+            <el-input-number v-model="friendIntervalSec" :min="1" :max="60" :step="1" size="small" />
+            <span style="margin: 0 8px">-</span>
+            <el-input-number v-model="friendIntervalMaxSec" :min="1" :max="60" :step="1" size="small" />
+            <span class="unit" style="margin-left: 8px">秒随机 (1-60s)</span>
+          </div>
         </el-form-item>
         <el-form-item label="指定种植作物">
           <el-select
@@ -81,6 +89,16 @@
           </el-select>
           <div class="unit">多选，选中的好友农场将不会进入巡查(同时跳过除草/杀虫/浇水)</div>
         </el-form-item>
+        <el-form-item label="夜间不巡查">
+          <el-switch v-model="nightModeEnabled" active-text="开启" inactive-text="关闭" />
+          <div v-if="nightModeEnabled" style="display: flex; align-items: center; margin-top: 8px">
+            <el-input-number v-model="nightModeStart" :min="0" :max="23" size="small" />
+            <span style="margin: 0 8px">点 至</span>
+            <el-input-number v-model="nightModeEnd" :min="0" :max="23" size="small" />
+            <span style="margin: 0 8px">点</span>
+          </div>
+          <div class="unit">设定的时间段内机器人将停止巡查好友(不偷菜/不帮忙)</div>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="saveConfig" :loading="saving">保存配置</el-button>
         </el-form-item>
@@ -146,7 +164,9 @@ import { getAccountSnapshot, updateAccountConfig, getPlantRanking, getCropList, 
 const props = defineProps({ uin: String })
 
 const farmIntervalSec = ref(1)
+const farmIntervalMaxSec = ref(10)
 const friendIntervalSec = ref(10)
+const friendIntervalMaxSec = ref(30)
 const preferredSeedId = ref(29999)  // 29999 = 白萝卜仙人
 const saving = ref(false)
 const userLevel = ref(1)
@@ -154,6 +174,9 @@ const fastHarvest = ref(false)
 const stealBlacklist = ref([])
 const friendBlacklist = ref([])
 const featureToggles = ref({})
+const nightModeEnabled = ref(false)
+const nightModeStart = ref(23)
+const nightModeEnd = ref(7)
 
 const ranking = ref([])
 const rankingLoading = ref(false)
@@ -167,7 +190,9 @@ async function fetchConfig() {
     const res = await getAccountSnapshot(props.uin)
     const data = res.data
     farmIntervalSec.value = Math.round((data.farmInterval || 1000) / 1000)
+    farmIntervalMaxSec.value = Math.round((data.farmIntervalMax || data.farmInterval || 1000) / 1000)
     friendIntervalSec.value = Math.round((data.friendInterval || 10000) / 1000)
+    friendIntervalMaxSec.value = Math.round((data.friendIntervalMax || data.friendInterval || 10000) / 1000)
     userLevel.value = data.userState?.level || 1
     // 显式判断，保留 0 表示自动选择
     preferredSeedId.value = data.preferredSeedId ?? 0
@@ -177,6 +202,9 @@ async function fetchConfig() {
     fastHarvest.value = featureToggles.value.fastHarvest || false
     stealBlacklist.value = featureToggles.value.stealBlacklist || []
     friendBlacklist.value = featureToggles.value.friendBlacklist || []
+    nightModeEnabled.value = featureToggles.value.nightModeEnabled || false
+    nightModeStart.value = featureToggles.value.nightModeStart ?? 23
+    nightModeEnd.value = featureToggles.value.nightModeEnd ?? 7
   } catch (e) {
     console.error('获取配置失败:', e)
   }
@@ -187,7 +215,9 @@ async function saveConfig() {
   try {
     await updateAccountConfig(props.uin, {
       farmInterval: farmIntervalSec.value * 1000,
+      farmIntervalMax: farmIntervalMaxSec.value * 1000,
       friendInterval: friendIntervalSec.value * 1000,
+      friendIntervalMax: friendIntervalMaxSec.value * 1000,
       preferredSeedId: preferredSeedId.value || 0,
     })
     
@@ -196,7 +226,10 @@ async function saveConfig() {
       ...featureToggles.value,
       fastHarvest: fastHarvest.value,
       stealBlacklist: stealBlacklist.value,
-      friendBlacklist: friendBlacklist.value
+      friendBlacklist: friendBlacklist.value,
+      nightModeEnabled: nightModeEnabled.value,
+      nightModeStart: nightModeStart.value,
+      nightModeEnd: nightModeEnd.value
     })
 
     ElMessage.success('配置已保存')

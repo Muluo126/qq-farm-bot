@@ -107,7 +107,9 @@ async function initDatabase() {
             session_data TEXT DEFAULT '',
             platform TEXT DEFAULT 'qq',
             farm_interval INTEGER DEFAULT 10000,
+            farm_interval_max INTEGER DEFAULT 10000,
             friend_interval INTEGER DEFAULT 10000,
+            friend_interval_max INTEGER DEFAULT 10000,
             auto_start INTEGER DEFAULT 0,
             feature_toggles TEXT DEFAULT '',
             daily_stats TEXT DEFAULT '',
@@ -192,6 +194,8 @@ async function initDatabase() {
     try { db.run(`ALTER TABLE users ADD COLUMN feature_toggles TEXT DEFAULT ''`); } catch (e) { }
     try { db.run(`ALTER TABLE users ADD COLUMN daily_stats TEXT DEFAULT ''`); } catch (e) { }
     try { db.run(`ALTER TABLE users ADD COLUMN daily_reward_state TEXT DEFAULT ''`); } catch (e) { }
+    try { db.run(`ALTER TABLE users ADD COLUMN farm_interval_max INTEGER DEFAULT 10000`); } catch (e) { }
+    try { db.run(`ALTER TABLE users ADD COLUMN friend_interval_max INTEGER DEFAULT 10000`); } catch (e) { }
 
     saveToFile();
 
@@ -216,9 +220,9 @@ function getUserById(id) {
     return queryOne('SELECT * FROM users WHERE id = ?', [id]);
 }
 
-function createUser({ uin, nickname = '', platform = 'qq', farmInterval = 10000, friendInterval = 10000 }) {
-    run(`INSERT INTO users (uin, nickname, platform, farm_interval, friend_interval) VALUES (?, ?, ?, ?, ?)`,
-        [uin, nickname, platform, farmInterval, friendInterval]);
+function createUser({ uin, nickname = '', platform = 'qq', farmInterval = 10000, farmIntervalMax = 10000, friendInterval = 10000, friendIntervalMax = 10000 }) {
+    run(`INSERT INTO users (uin, nickname, platform, farm_interval, farm_interval_max, friend_interval, friend_interval_max) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [uin, nickname, platform, farmInterval, farmIntervalMax, friendInterval, friendIntervalMax]);
     saveToFile();
     return getUserByUin(uin);
 }

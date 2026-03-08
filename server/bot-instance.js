@@ -114,7 +114,9 @@ class BotInstance extends EventEmitter {
         this.userId = userId;
         this.platform = opts.platform || 'qq';
         this.farmInterval = opts.farmInterval || CONFIG.farmCheckInterval;
+        this.farmIntervalMax = opts.farmIntervalMax || this.farmInterval;
         this.friendInterval = opts.friendInterval || CONFIG.friendCheckInterval;
+        this.friendIntervalMax = opts.friendIntervalMax || this.friendInterval;
         this.preferredSeedId = opts.preferredSeedId || 0; // 0 = 自动选择
 
         // ---------- 运行状态 ----------
@@ -216,6 +218,11 @@ class BotInstance extends EventEmitter {
             autoIllustrated: true,     // 图鉴奖励自动领取
             autoFertilizerBuy: false,  // 点券购买化肥（消耗点券，默认关）
             autoFertilizerUse: false,   // 使用化肥礼包
+
+            // ========== 夜间模式 ==========
+            nightModeEnabled: false,    // 夜间不巡查
+            nightModeStart: 23,        // 开始小时 (0-23)
+            nightModeEnd: 7,           // 结束小时 (0-23)
         };
 
         if (opts.featureToggles) {
@@ -640,7 +647,7 @@ class BotInstance extends EventEmitter {
                 this.log('WS', '连接已建立，正在登录...');
                 this.sendLogin(async () => {
                     // 登录成功 → 启动所有功能模块
-                    this.log('系统', `农场巡查间隔: ${this.farmInterval}ms | 好友巡查间隔: ${this.friendInterval}ms`);
+                    this.log('系统', `农场巡查间隔: ${this.farmInterval}-${this.farmIntervalMax}ms | 好友巡查间隔: ${this.friendInterval}-${this.friendIntervalMax}ms`);
                     this.startFarmLoop();
                     this.startFriendLoop();
                     this._initTaskSystem();
@@ -892,16 +899,26 @@ class BotInstance extends EventEmitter {
         const state = this.userState;
 
         if (deadLandIds.length > 0) {
-            try {
-                await this.removePlant(deadLandIds);
-                this.log('铲除', `已铲除 ${deadLandIds.length} 块枯死作物`);
-                landsToPlant.push(...deadLandIds);
-            } catch (e) {
-                this.logWarn('铲除', `失败: ${e.message}`);
-                landsToPlant.push(...deadLandIds);
+            if (this.featureToggles.autoPlant) {
+                try {
+                    await this.removePlant(deadLandIds);
+                    this.log('铲除', `已铲除 ${deadLandIds.length} 块枯死作物`);
+                    landsToPlant.push(...deadLandIds);
+                } catch (e) {
+                    this.logWarn('铲除', `失败: ${e.message}`);
+                    landsToPlant.push(...deadLandIds);
+                }
+            } else {
+                this.log('农场', `跳过铲除 ${deadLandIds.length} 块枯死作物 (自动种植已关闭)`);
             }
         }
         if (landsToPlant.length === 0) return;
+
+        if (!this.featureToggles.autoPlant) {
+            // 虽然逻辑上 landsToPlant 来自 emptyLandIds 或已铲除的 deadLandIds，
+            // 但如果 autoPlant 关闭，我们不应该继续购买和种植。
+            return;
+        }
 
         let bestSeed;
         try { bestSeed = await this.findBestSeed(unlockedLandCount); } catch (e) { return; }
@@ -935,7 +952,7 @@ class BotInstance extends EventEmitter {
             if (planted > 0) plantedLands = landsToPlant.slice(0, planted);
         } catch (e) { this.logWarn('种植', e.message); }
 
-        if (plantedLands.length > 0) {
+        if (plantedLands.length > 0 && (this.featureToggles.autoFertilize ?? true)) {
             const fertilized = await this.fertilize(plantedLands);
             if (fertilized > 0) this.log('施肥', `已为 ${fertilized}/${plantedLands.length} 块地施肥`);
         }
@@ -963,6 +980,7 @@ class BotInstance extends EventEmitter {
             soonToMature: [],   // 即将成熟的土地 (秒收用)
             unlockable: [],     // 可解锁（开拓）的土地
             upgradable: [],     // 可升级的土地
+            needFertilize: [],  // 需要施肥的土地
         };
         const nowSec = this.getServerTimeSec();
         for (const land of lands) {
@@ -1011,6 +1029,16 @@ class BotInstance extends EventEmitter {
             if ((plant.weed_owners && plant.weed_owners.length > 0) || (weedsTime > 0 && weedsTime <= nowSec)) result.needWeed.push(id);
             const insectTime = this.toTimeSec(currentPhase.insect_time);
             if ((plant.insect_owners && plant.insect_owners.length > 0) || (insectTime > 0 && insectTime <= nowSec)) result.needBug.push(id);
+
+            // 检查多季施肥 (第二季及以后，且有剩余次数)
+            const plantCfg = getPlantById(plantId);
+            const currentSeason = (toNum(plant.season) || 0) + 1;
+            const totalSeasons = plantCfg ? (plantCfg.seasons || 1) : 1;
+            const leftFertTimes = toNum(plant.left_inorc_fert_times);
+            if (totalSeasons > 1 && currentSeason > 1 && leftFertTimes > 0) {
+                result.needFertilize.push(id);
+            }
+
             // 计算距成熟剩余时间
             const maturePhase = plant.phases.find(p => p.phase === PlantPhase.MATURE);
             let timeLeft = '';
@@ -1041,6 +1069,106 @@ class BotInstance extends EventEmitter {
         return result;
     }
 
+    getLandLifecycleState(land) {
+        if (!land) return 'unknown';
+        const plant = land.plant;
+        if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) {
+            return 'empty';
+        }
+
+        const currentPhase = this.getCurrentPhase(plant.phases);
+        if (!currentPhase) return 'empty';
+
+        const phaseVal = toNum(currentPhase.phase);
+        if (phaseVal === PlantPhase.DEAD) return 'dead';
+        if (phaseVal === PlantPhase.UNKNOWN) return 'empty';
+        if (phaseVal >= PlantPhase.SEED && phaseVal <= PlantPhase.MATURE) return 'growing';
+        return 'unknown';
+    }
+
+    classifyHarvestedLandsByMap(landIds, landsMap) {
+        const removable = [];
+        const growing = [];
+        const unknown = [];
+        for (const id of landIds) {
+            const land = landsMap.get(id);
+            if (!land) {
+                unknown.push(id);
+                continue;
+            }
+            const state = this.getLandLifecycleState(land);
+            if (state === 'dead' || state === 'empty') {
+                removable.push(id);
+                continue;
+            }
+            if (state === 'growing') {
+                growing.push(id);
+                continue;
+            }
+            unknown.push(id);
+        }
+        return { removable, growing, unknown };
+    }
+
+    async resolveRemovableHarvestedLands(harvestedLandIds, harvestReply) {
+        const ids = Array.isArray(harvestedLandIds) ? harvestedLandIds.filter(Boolean) : [];
+        if (ids.length === 0) {
+            return { removable: [], growing: [], fallbackRemoved: 0 };
+        }
+
+        const replyMap = new Map();
+        if (harvestReply && harvestReply.land) {
+            for (const land of harvestReply.land) {
+                const id = toNum(land.id);
+                if (id > 0) replyMap.set(id, land);
+            }
+        }
+
+        const firstPass = this.classifyHarvestedLandsByMap(ids, replyMap);
+        const removable = [...firstPass.removable];
+        const growing = [...firstPass.growing];
+        let unknown = [...firstPass.unknown];
+        let fallbackRemoved = 0;
+
+        if (unknown.length > 0) {
+            try {
+                const latestLandsReply = await this.getAllLands();
+                const latestMap = new Map();
+                if (latestLandsReply && latestLandsReply.lands) {
+                    for (const land of latestLandsReply.lands) {
+                        const id = toNum(land.id);
+                        if (id > 0) latestMap.set(id, land);
+                    }
+                }
+                const secondPass = this.classifyHarvestedLandsByMap(unknown, latestMap);
+                removable.push(...secondPass.removable);
+                growing.push(...secondPass.growing);
+                unknown = secondPass.unknown;
+            } catch (e) {
+                this.logWarn('农场', `收后状态补拉失败: ${e.message}`);
+            }
+        }
+
+        if (unknown.length > 0) {
+            // 按兼容策略：不可判定时保持旧行为，继续铲除
+            removable.push(...unknown);
+            fallbackRemoved = unknown.length;
+        }
+
+        return {
+            removable: [...new Set(removable)],
+            growing: [...new Set(growing)],
+            fallbackRemoved,
+        };
+    }
+
+    // ============ 工具函数 ============
+
+    getRandomWait(min, max) {
+        if (max <= min) return min;
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
     // ================================================================
     //  农场巡查循环
     // ================================================================
@@ -1063,6 +1191,7 @@ class BotInstance extends EventEmitter {
             if (status.needWeed.length) statusParts.push(`🌿草:${status.needWeed.length}`);
             if (status.needBug.length) statusParts.push(`🐛虫:${status.needBug.length}`);
             if (status.needWater.length) statusParts.push(`💦水:${status.needWater.length}`);
+            if (status.needFertilize.length) statusParts.push(`🧪肥:${status.needFertilize.length}`);
             if (status.dead.length) statusParts.push(`💫枯:${status.dead.length}`);
             if (status.empty.length) statusParts.push(`⬜空:${status.empty.length}`);
             statusParts.push(`🌱生长:${status.growing.length}`);
@@ -1072,9 +1201,14 @@ class BotInstance extends EventEmitter {
 
             const actions = [];
             const batchOps = [];
-            if (status.needWeed.length > 0) batchOps.push(this.weedOut(status.needWeed).then(() => actions.push(`🌿除草×${status.needWeed.length}`)).catch(e => this.logWarn('除草', e.message)));
-            if (status.needBug.length > 0) batchOps.push(this.insecticide(status.needBug).then(() => actions.push(`🐛除虫×${status.needBug.length}`)).catch(e => this.logWarn('除虫', e.message)));
-            if (status.needWater.length > 0) batchOps.push(this.waterLand(status.needWater).then(() => actions.push(`💦浇水×${status.needWater.length}`)).catch(e => this.logWarn('浇水', e.message)));
+            if (status.needWeed.length > 0 && (this.featureToggles.autoWeed ?? true)) batchOps.push(this.weedOut(status.needWeed).then(() => actions.push(`🌿除草×${status.needWeed.length}`)).catch(e => this.logWarn('除草', e.message)));
+            if (status.needBug.length > 0 && (this.featureToggles.autoPest ?? true)) batchOps.push(this.insecticide(status.needBug).then(() => actions.push(`🐛除虫×${status.needBug.length}`)).catch(e => this.logWarn('除虫', e.message)));
+            if (status.needWater.length > 0 && (this.featureToggles.autoWater ?? true)) batchOps.push(this.waterLand(status.needWater).then(() => actions.push(`💦浇水×${status.needWater.length}`)).catch(e => this.logWarn('浇水', e.message)));
+            if (status.needFertilize.length > 0 && (this.featureToggles.autoFertilize ?? true)) {
+                batchOps.push(this.fertilize(status.needFertilize).then(count => {
+                    if (count > 0) actions.push(`🧪施肥×${count}`);
+                }).catch(e => this.logWarn('施肥', e.message)));
+            }
             if (batchOps.length > 0) await Promise.all(batchOps);
 
             // 处理秒收预设
@@ -1104,9 +1238,10 @@ class BotInstance extends EventEmitter {
             }
 
             let harvestedLandIds = [];
-            if (status.harvestable.length > 0) {
+            let harvestReply = null;
+            if (status.harvestable.length > 0 && (this.featureToggles.autoHarvest ?? true)) {
                 try {
-                    const reply = await this.harvest(status.harvestable);
+                    harvestReply = await this.harvest(status.harvestable);
                     actions.push(`🌽收获×${status.harvestable.length}`);
                     harvestedLandIds = [...status.harvestable];
                     this._checkDailyReset();
@@ -1114,8 +1249,8 @@ class BotInstance extends EventEmitter {
 
                     // 记录统计数据 (按作物种类聚合)
                     const cropCounts = {};
-                    if (reply.items && reply.items.length > 0) {
-                        for (const item of reply.items) {
+                    if (harvestReply.items && harvestReply.items.length > 0) {
+                        for (const item of harvestReply.items) {
                             const itemId = toNum(item.id);
                             // 过滤金币、经验等非作物掉落
                             if (itemId === 1 || itemId === 1001 || itemId === 2 || itemId === 1101) continue;
@@ -1142,8 +1277,17 @@ class BotInstance extends EventEmitter {
                 catch (e) { this.logWarn('收获', e.message); }
             }
 
-            const allDead = [...status.dead, ...harvestedLandIds];
+            let allDead = [...status.dead];
             const allEmpty = [...status.empty];
+
+            if (harvestedLandIds.length > 0) {
+                const postHarvest = await this.resolveRemovableHarvestedLands(harvestedLandIds, harvestReply);
+                allDead = [...new Set([...allDead, ...postHarvest.removable])];
+                if (postHarvest.growing.length > 0) {
+                    this.log('农场', `保留 ${postHarvest.growing.length} 块续产土地 (二季作物)`);
+                }
+            }
+
             if (allDead.length > 0 || allEmpty.length > 0) {
                 try { await this.autoPlantEmptyLands(allDead, allEmpty, unlockedCount); actions.push(`🌱种植×${allDead.length + allEmpty.length}`); }
                 catch (e) { this.logWarn('种植', e.message); }
@@ -1226,7 +1370,8 @@ class BotInstance extends EventEmitter {
         while (this.farmLoopRunning) {
             await this.checkFarm();
             if (!this.farmLoopRunning) break;
-            await sleep(this.farmInterval);
+            const waitMs = this.getRandomWait(this.farmInterval, this.farmIntervalMax);
+            await sleep(waitMs);
         }
     }
 
@@ -1552,8 +1697,29 @@ class BotInstance extends EventEmitter {
         await this.leaveFriendFarm(gid);
     }
 
+    /** 判断是否处于夜间不巡查时段 */
+    _isNightMode() {
+        if (!this.featureToggles.nightModeEnabled) return false;
+        const now = new Date();
+        const hour = now.getHours();
+        const start = this.featureToggles.nightModeStart ?? 23;
+        const end = this.featureToggles.nightModeEnd ?? 7;
+
+        if (start < end) {
+            // 普通时段 (如 1-7点)
+            return hour >= start && hour < end;
+        } else {
+            // 跨天时段 (如 23-7点)
+            return hour >= start || hour < end;
+        }
+    }
+
     async checkFriends() {
         if (this.isCheckingFriends || !this.userState.gid) return;
+        if (this._isNightMode()) {
+            this.log('巡查', '当前处于夜间不巡查模式，跳过好友巡查');
+            return;
+        }
         this.isCheckingFriends = true;
         this._checkDailyReset();
         try {
@@ -1636,7 +1802,8 @@ class BotInstance extends EventEmitter {
         while (this.friendLoopRunning) {
             await this.checkFriends();
             if (!this.friendLoopRunning) break;
-            await sleep(this.friendInterval);
+            const waitMs = this.getRandomWait(this.friendInterval, this.friendIntervalMax);
+            await sleep(waitMs);
         }
     }
 
@@ -2334,6 +2501,13 @@ class BotInstance extends EventEmitter {
     }
 
     async sellAllFruits() {
+        if (!this.featureToggles.autoSell) {
+            if (this.sellTimer) {
+                clearInterval(this.sellTimer);
+                this.sellTimer = null;
+            }
+            return;
+        }
         try {
             const bagReply = await this._getBag();
             const items = this._getBagItems(bagReply);
@@ -2358,6 +2532,7 @@ class BotInstance extends EventEmitter {
     }
 
     async _debugSellFruits() {
+        if (!this.featureToggles.autoSell) return;
         try {
             const bagReply = await this._getBag();
             const items = this._getBagItems(bagReply);
@@ -2370,7 +2545,7 @@ class BotInstance extends EventEmitter {
     }
 
     _startSellLoop(interval = 60000) {
-        if (this.sellTimer) return;
+        if (this.sellTimer || !this.featureToggles.autoSell) return;
         setTimeout(() => {
             this.sellAllFruits();
             this.sellTimer = setInterval(() => this.sellAllFruits(), interval);
@@ -2453,7 +2628,9 @@ class BotInstance extends EventEmitter {
             platform: this.platform,
             userState: { ...this.userState },
             farmInterval: this.farmInterval,
+            farmIntervalMax: this.farmIntervalMax,
             friendInterval: this.friendInterval,
+            friendIntervalMax: this.friendIntervalMax,
             startedAt: this.startedAt,
             uptime: this.startedAt ? Date.now() - this.startedAt : 0,
             featureToggles: { ...this.featureToggles },
@@ -2500,6 +2677,11 @@ class BotInstance extends EventEmitter {
                 detail.plantName = plantName;
                 detail.phase = phaseVal;
                 detail.phaseName = PHASE_NAMES[phaseVal] || '未知';
+
+                // 季数信息
+                const plantCfg = getPlantById(plantId);
+                detail.currentSeason = (toNum(plant.season) || 0) + 1;
+                detail.totalSeasons = plantCfg ? (plantCfg.seasons || 1) : 1;
 
                 if (phaseVal === PlantPhase.DEAD) {
                     detail.status = 'dead';
@@ -2555,7 +2737,23 @@ class BotInstance extends EventEmitter {
 
     /** 更新功能开关 */
     setFeatureToggles(toggles) {
+        const oldAutoSell = !!this.featureToggles.autoSell;
         Object.assign(this.featureToggles, toggles);
+        const newAutoSell = !!this.featureToggles.autoSell;
+
+        if (oldAutoSell !== newAutoSell) {
+            if (newAutoSell) {
+                this.log('配置', '自动出售已开启，启动循环');
+                this._startSellLoop();
+            } else {
+                this.log('配置', '自动出售已关闭，停止循环');
+                if (this.sellTimer) {
+                    clearInterval(this.sellTimer);
+                    this.sellTimer = null;
+                }
+            }
+        }
+
         this.log('配置', `功能开关已更新: ${JSON.stringify(toggles)}`);
         this.emit('settingsUpdate', { userId: this.userId, featureToggles: this.featureToggles });
     }

@@ -48,7 +48,9 @@ class BotManager extends EventEmitter {
                     errorMessage: snap.errorMessage,
                     platform: u.platform,
                     farmInterval: u.farm_interval,
+                    farmIntervalMax: u.farm_interval_max || u.farm_interval,
                     friendInterval: u.friend_interval,
+                    friendIntervalMax: u.friend_interval_max || u.friend_interval,
                     autoStart: !!u.auto_start,
                     startedAt: snap.startedAt,
                     uptime: snap.uptime,
@@ -66,7 +68,9 @@ class BotManager extends EventEmitter {
                 errorMessage: '',
                 platform: u.platform,
                 farmInterval: u.farm_interval,
+                farmIntervalMax: u.farm_interval_max || u.farm_interval,
                 friendInterval: u.friend_interval,
+                friendIntervalMax: u.friend_interval_max || u.friend_interval,
                 autoStart: !!u.auto_start,
                 startedAt: null,
                 uptime: 0,
@@ -110,7 +114,9 @@ class BotManager extends EventEmitter {
                 uin,
                 platform,
                 farmInterval: opts.farmInterval || CONFIG.farmCheckInterval,
+                farmIntervalMax: opts.farmIntervalMax || opts.farmInterval || CONFIG.farmCheckInterval,
                 friendInterval: opts.friendInterval || CONFIG.friendCheckInterval,
+                friendIntervalMax: opts.friendIntervalMax || opts.friendInterval || CONFIG.friendCheckInterval,
             });
         }
 
@@ -122,7 +128,9 @@ class BotManager extends EventEmitter {
         const session = {
             uin, loginCode, url, platform,
             farmInterval: opts.farmInterval || user.farm_interval || CONFIG.farmCheckInterval,
+            farmIntervalMax: opts.farmIntervalMax || user.farm_interval_max || opts.farmInterval || user.farm_interval || CONFIG.farmCheckInterval,
             friendInterval: opts.friendInterval || user.friend_interval || CONFIG.friendCheckInterval,
+            friendIntervalMax: opts.friendIntervalMax || user.friend_interval_max || opts.friendInterval || user.friend_interval || CONFIG.friendCheckInterval,
             createdAt: Date.now(),
         };
         this.qrSessions.set(uin, session);
@@ -174,7 +182,9 @@ class BotManager extends EventEmitter {
                         if (user.daily_reward_state) startOpts.dailyRewardState = JSON.parse(user.daily_reward_state);
                         startOpts.preferredSeedId = user.preferred_seed_id || 0;
                         if (user.farm_interval) startOpts.farmInterval = user.farm_interval;
+                        if (user.farm_interval_max) startOpts.farmIntervalMax = user.farm_interval_max;
                         if (user.friend_interval) startOpts.friendInterval = user.friend_interval;
+                        if (user.friend_interval_max) startOpts.friendIntervalMax = user.friend_interval_max;
                     }
                     await this._startBot(uin, code, startOpts);
                     return;
@@ -227,7 +237,9 @@ class BotManager extends EventEmitter {
         const bot = new BotInstance(uin, {
             platform: opts.platform || 'qq',
             farmInterval: opts.farmInterval || CONFIG.farmCheckInterval,
+            farmIntervalMax: opts.farmIntervalMax || opts.farmInterval || CONFIG.farmCheckInterval,
             friendInterval: opts.friendInterval || CONFIG.friendCheckInterval,
+            friendIntervalMax: opts.friendIntervalMax || opts.friendInterval || CONFIG.friendCheckInterval,
             preferredSeedId: opts.preferredSeedId || 0,
             featureToggles: opts.featureToggles || null,
             dailyStats: opts.dailyStats || null,
@@ -344,7 +356,9 @@ class BotManager extends EventEmitter {
         await this._startBot(uin, code, {
             platform: user?.platform || 'qq',
             farmInterval: user?.farm_interval || 10000,
+            farmIntervalMax: user?.farm_interval_max || user?.farm_interval || 10000,
             friendInterval: user?.friend_interval || 10000,
+            friendIntervalMax: user?.friend_interval_max || user?.friend_interval || 10000,
             preferredSeedId: user?.preferred_seed_id || 0,
             featureToggles: user?.feature_toggles ? JSON.parse(user.feature_toggles) : null,
             dailyStats: user?.daily_stats ? JSON.parse(user.daily_stats) : null,
@@ -376,10 +390,12 @@ class BotManager extends EventEmitter {
     /**
      * 修改账号配置
      */
-    updateAccountConfig(uin, { farmInterval, friendInterval, autoStart, platform, preferredSeedId }) {
+    updateAccountConfig(uin, { farmInterval, farmIntervalMax, friendInterval, friendIntervalMax, autoStart, platform, preferredSeedId }) {
         const updates = {};
         if (farmInterval !== undefined) updates.farm_interval = farmInterval;
+        if (farmIntervalMax !== undefined) updates.farm_interval_max = farmIntervalMax;
         if (friendInterval !== undefined) updates.friend_interval = friendInterval;
+        if (friendIntervalMax !== undefined) updates.friend_interval_max = friendIntervalMax;
         if (autoStart !== undefined) updates.auto_start = autoStart ? 1 : 0;
         if (platform !== undefined) updates.platform = platform;
         if (preferredSeedId !== undefined) updates.preferred_seed_id = preferredSeedId;
@@ -389,7 +405,9 @@ class BotManager extends EventEmitter {
         const bot = this.bots.get(uin);
         if (bot) {
             if (farmInterval !== undefined) bot.farmInterval = farmInterval;
+            if (farmIntervalMax !== undefined) bot.farmIntervalMax = farmIntervalMax;
             if (friendInterval !== undefined) bot.friendInterval = friendInterval;
+            if (friendIntervalMax !== undefined) bot.friendIntervalMax = friendIntervalMax;
             if (preferredSeedId !== undefined) bot.setPreferredSeedId(preferredSeedId);
         }
     }
@@ -410,7 +428,9 @@ class BotManager extends EventEmitter {
                     this._startBot(user.uin, code, {
                         platform: user.platform,
                         farmInterval: user.farm_interval,
+                        farmIntervalMax: user.farm_interval_max || user.farm_interval,
                         friendInterval: user.friend_interval,
+                        friendIntervalMax: user.friend_interval_max || user.friend_interval,
                         preferredSeedId: user.preferred_seed_id || 0,
                         featureToggles: user.feature_toggles ? JSON.parse(user.feature_toggles) : null,
                         dailyStats: user.daily_stats ? JSON.parse(user.daily_stats) : null,
