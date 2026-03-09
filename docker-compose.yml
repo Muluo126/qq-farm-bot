@@ -1,7 +1,7 @@
 services:
   qq-farm-bot:
     # 直接拉取线上镜像，实现秒级启动
-    image: Muluo126/qq-farm-bot:latest
+    image: muluo126/qq-farm-bot:latest
     container_name: qq-farm-bot
     restart: always
     ports:
