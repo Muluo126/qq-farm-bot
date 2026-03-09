@@ -3,7 +3,7 @@ services:
     # 强制在本地使用 Dockerfile 进行实时构建 
     build: . 
     container_name: qq-farm-bot-dev
-    restart: unless-stopped
+    restart: always
     ports:
       - "3000:3000" 
     volumes:
@@ -11,4 +11,4 @@ services:
       - ./data:/app/data 
     environment:
       - PORT=3000 
-      - BOT_ENCRYPT_KEY=qq-farm-bot-default-key-32bytes! 
+      - BOT_ENCRYPT_KEY=19DF9E1F07B967242B371512B6643277
