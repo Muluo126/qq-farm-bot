@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main  # main 分支有推送时触发
+  workflow_dispatch:  # 【新增】允许在 Actions 页面手动点击按钮触发部署
 
 jobs:
   deploy:
@@ -17,7 +18,8 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
-            cd /root/qq-farm-bot
+            # 这里的路径请根据你在飞牛OS中的实际路径修改，例如 /vol1/1/docker/qq-farm-bot
+            cd /vol1/1000/qqfarm
             git pull origin main
             # 指定使用 dev 配置文件先停止旧容器
             docker compose -f docker-compose.dev.yml down
