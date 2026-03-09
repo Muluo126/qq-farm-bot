@@ -18,10 +18,13 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
-            # 这里的路径请根据你在飞牛OS中的实际路径修改，例如 /vol1/1/docker/qq-farm-bot
             cd /vol1/1000/qqfarm
             git pull origin main
-            # 指定使用 dev 配置文件先停止旧容器
+            # 停止并移除旧容器
             docker compose -f docker-compose.dev.yml down
-            # 指定使用 dev 配置文件进行构建并后台启动
-            docker compose -f docker-compose.dev.yml up -d --build
+            # 强制拉取最新镜像（如果是从 Docker Hub 拉取）
+            docker compose -f docker-compose.dev.yml pull
+            # 启动新容器
+            docker compose -f docker-compose.dev.yml up -d
+            # 清理无用的虚悬镜像（释放空间）
+            docker image prune -f
