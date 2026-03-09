@@ -1,3 +1,12 @@
+# 项目状态：停止维护
+
+因临近毕业，本作者需要把更多精力投入到毕设和论文中，所以本仓库停止维护更新。
+如果你仍在使用v4.0.1版本，请不要种植新活动里的四格作物，会导致运行异常。
+
+以下是完成度更高的项目：
+
+- [Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui)
+
 <div align="center">
 
 # QQ-FARM-BOT
